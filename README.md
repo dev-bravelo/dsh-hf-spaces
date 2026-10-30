@@ -101,9 +101,9 @@ requirements, not guarantees:
   checks the Harness applies to its own routes;
 - tests never call real services: they use a simulated Hugging Face API and a simulated Space.
 
-**In place now, for this repository:**
-- a secret and personal-data scanner with `pre-commit` and `commit-msg` hooks;
-- gitleaks in the pre-commit hook when it is installed. See [AGENTS.md](AGENTS.md), section 4.
+**In place now, for this repository:** a secret and personal-data scanner, with no
+dependencies, run by the `pre-commit` and `commit-msg` hooks. See [AGENTS.md](AGENTS.md),
+section 4.
 
 **Reporting a vulnerability:** see [SECURITY.md](SECURITY.md). Never paste a token in an issue.
 

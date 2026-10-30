@@ -234,10 +234,10 @@ on the Harness 0.2.x line. Lessons, all verified:
 | Phase | Output | Exit criterion |
 |---|---|---|
 | 0. Contracts | A verified contract note: Client bundle format and what it receives (React, theme, locale), the three slots, `webServer` routes, credential APIs, HF Space endpoints | Each item verified on Harness 0.2.1-rc.3 or marked not available |
-| 1. Host | Provider routes, supervisor, HF client, routes, offline tests (HF and Space simulators) | Parity with the prototype except the UI; tests green in CI |
+| 1. Host | Provider routes, supervisor, HF client, routes, offline tests (HF and Space simulators) | Parity with the prototype except the UI; `npm run check` green |
 | 2. Client | Indicator, sidebar tab, toasts | Manual test on the Desktop by a maintainer |
 | 3. Migration | Replace the prototype in a real profile, with an explicit `route` equal to the prototype's provider id and its event prefix set in that profile | Sessions bound to the old provider id keep working |
-| 4. 1.0 | npm package, compatibility matrix, audit for secrets and personal data, repository made public | Audit clean; CI green |
+| 4. 1.0 | npm package, compatibility matrix, audit for secrets and personal data, repository made public | Audit clean; `npm run check` green |
 
 ## 12. Open questions
 

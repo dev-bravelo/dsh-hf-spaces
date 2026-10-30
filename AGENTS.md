@@ -32,9 +32,17 @@ the Space on demand and stopping it when idle.
 4. **Print, log or return a token value**, even partially. Refer to credentials by name only.
 5. **Call real Hugging Face APIs or real Spaces from tests.** Tests run offline against
    simulators.
-6. **Add a runtime dependency** without a concrete need stated in the pull request. The Host
+6. **Add complexity that is not essential.** Keep the plugin and this repository simple for users
+   and contributors. Do not add any of these unless the feature cannot work without it:
+   - hosted services, such as GitHub Actions or other CI;
+   - external tools a contributor must install;
+   - extra features or settings.
+
+   Prefer Node.js built-ins and what the Harness already provides. If you believe one is
+   essential, ask the maintainer first; do not add it and explain afterwards.
+7. **Add a runtime dependency** without a concrete need stated in the pull request. The Host
    half uses Node.js built-ins and the packages the Harness provides.
-7. **Modify a DeepSeek Harness installation** (`app.asar`, executables) or rely on its private
+8. **Modify a DeepSeek Harness installation** (`app.asar`, executables) or rely on its private
    internals when a public extension point exists.
 
 ### You MUST
@@ -61,10 +69,9 @@ the Space on demand and stopping it when idle.
 | `docs/design.md` | Architecture, Space lifecycle, configuration schema, progress protocol, platform facts, roadmap |
 | `examples/config.example.yml` | Commented configuration with fake values |
 | `scripts/check-secrets.mjs` | Secret and personal-data scanner (no dependencies) |
-| `.githooks/pre-commit` | Runs the scanner on staged files and the commit identity, then gitleaks when installed |
+| `.githooks/pre-commit` | Runs the scanner on staged files and the commit identity |
 | `.githooks/commit-msg` | Runs the scanner on the commit message |
 | `test/` | Offline tests (`node:test`) |
-| `.github/workflows/ci.yml` | Defined workflow: tests, scanner and gitleaks. It runs only when GitHub Actions is enabled and funded for the repository, so do not rely on it as the only check |
 | `llms.txt` | Short index of this repository for language models |
 
 ## 4. Commands
@@ -91,12 +98,9 @@ the Space on demand and stopping it when idle.
 address for this repository: `git config user.email <id>+<login>@users.noreply.github.com`. The
 pre-commit hook warns about any other address and refuses one that matches the denylist.
 
-**gitleaks.** The project scanner knows the token formats this project is likely to meet;
-gitleaks knows hundreds more. Install it so the pre-commit hook runs it too:
-- Windows: `winget install gitleaks`;
-- macOS: `brew install gitleaks`.
-
-Without it, the hook prints a note and runs only the project scanner.
+**Coverage of the scanner.** It knows the token formats this project is likely to meet. It needs
+no external tool. When you handle a credential of another kind, add its format to
+`SECRET_PATTERNS`, with a test.
 
 ## 5. Coding conventions
 
@@ -119,11 +123,11 @@ Without it, the hook prints a note and runs only the project scanner.
 - **Evidence:** do not commit local test output, because it contains local paths.
   - **What to record instead:** each change states in the CHANGELOG which tests passed, on which
     operating system and Harness version.
-  - **CI:** when it runs, it prints results in its log. It publishes no report files.
+  - **No CI:** there is none on purpose. Checks run locally (`npm run check` and the hooks).
 
 ## 7. Definition of done
 
 - [ ] Behavior matches docs/design.md, or the design was updated in the same change.
-- [ ] `npm run check` passes locally and CI is green.
+- [ ] `npm run check` passes locally.
 - [ ] README, design and CHANGELOG describe the change, with the Harness version it was verified on.
 - [ ] No secret, personal data or real account default was added. Check the diff, not only the scanner.

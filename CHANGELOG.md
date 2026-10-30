@@ -14,16 +14,22 @@ All notable changes are listed here. The format follows
   - commented configuration example.
 - Design document: architecture, Space lifecycle, credentials, configuration schema, progress
   protocol, roadmap.
-- Secret and personal-data scanner (`scripts/check-secrets.mjs`), a pre-commit hook, tests,
-  and a CI workflow definition (tests, scanner, gitleaks) that runs only when GitHub Actions is
-  enabled for the repository.
+- Secret and personal-data scanner (`scripts/check-secrets.mjs`), a pre-commit hook and tests.
+- Rule for contributors: no complexity that is not essential (hosted CI, external tools, extra
+  dependencies or features) without the maintainer's approval.
+
+### Removed
+
+- GitHub Actions workflow. It was not essential; checks run locally (`npm run check` and the
+  hooks).
+- gitleaks, its configuration and its optional run in the pre-commit hook. It was an external
+  tool; the project scanner needs nothing installed.
 
 ### Fixed (code review of the scaffold)
 
 - **Hooks:** committed as executable, so they run on macOS and Linux too.
 - **Scanner coverage:** more token formats (Stripe, Google, Telegram, JWT, npm `_authToken`,
-  generic secret assignments, case-insensitive bearer). The pre-commit hook also runs gitleaks
-  when it is installed.
+  generic secret assignments, case-insensitive bearer).
 - **Personal data:** commits fail closed without a private denylist; a `DSH_PRIVATE_DENYLIST`
   that points to a missing file is an error.
 - **Commit identity:** a `commit-msg` hook scans the message, and the pre-commit hook scans the
@@ -40,6 +46,5 @@ All notable changes are listed here. The format follows
   - model-specific reasoning mapping in the example.
 - **Docs:**
   - security behavior is marked as planned, not implemented;
-  - CI is described as it is;
   - more credential files are git-ignored (`.npmrc`, `.netrc`, `.pypirc`, SSH keys,
     certificates).

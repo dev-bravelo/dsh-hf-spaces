@@ -1,15 +1,4 @@
 #!/bin/sh
-# 1. Project scanner: secrets, personal paths, private denylist terms and the commit identity.
-node scripts/check-secrets.mjs --staged || exit 1
-
-# 2. gitleaks, when installed: its much wider rule set, with .gitleaks.toml.
-#    `gitleaks git --pre-commit --staged` exists from v8.19; older versions only have `protect --staged`.
-if command -v gitleaks >/dev/null 2>&1; then
-  if gitleaks git --help >/dev/null 2>&1; then
-    gitleaks git --pre-commit --staged --redact --no-banner || exit 1
-  else
-    gitleaks protect --staged --redact --no-banner || exit 1
-  fi
-else
-  echo "note: gitleaks is not installed, so only the project scanner ran. Install it (see AGENTS.md, section 4)." >&2
-fi
+# Refuse the commit when a staged file or the commit identity contains a secret, a personal path
+# or a term from .private-denylist.
+exec node scripts/check-secrets.mjs --staged

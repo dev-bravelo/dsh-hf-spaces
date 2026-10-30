@@ -3,7 +3,7 @@
  * Secret and personal-data scanner for this public repository. No dependencies.
  *
  * Usage:
- *   node scripts/check-secrets.mjs                  scan every tracked file (CI, `npm run check`)
+ *   node scripts/check-secrets.mjs                  scan every tracked file (`npm run check`)
  *   node scripts/check-secrets.mjs --staged         scan staged content and the commit identity (pre-commit hook)
  *   node scripts/check-secrets.mjs --message FILE   scan a commit message (commit-msg hook)
  *
@@ -13,8 +13,8 @@
  *
  * The commit modes (--staged, --message) fail closed: they refuse to run without a denylist,
  * because a missing denylist would silently let personal data through. A denylist with only
- * comments is an explicit "nothing personal to check". The tracked-files mode only notes it,
- * since CI never has a denylist.
+ * comments is an explicit "nothing personal to check". The tracked-files mode only notes it, so
+ * anyone can check a clone for secrets without having a denylist.
  *
  * Exit codes: 0 clean, 1 findings, 2 setup problem (missing denylist, not a git repository).
  */

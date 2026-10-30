@@ -26,7 +26,7 @@ node_modules/
 .artifacts/
 *.tgz
 
-# Local test output (contains local paths; CI produces the reports)
+# Local test output (contains local paths; never commit it)
 verification/
 *.tap
 coverage/
