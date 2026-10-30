@@ -137,7 +137,18 @@ How they are handled:
 
 See [examples/config.example.yml](../examples/config.example.yml). Rules:
 - **Required per Space:** only `id` (`owner/name`).
-- **Base URL:** `https://<owner>-<name>.hf.space/v1`, unless set explicitly.
+- **Route:** the provider id the Harness stores in each session. It is lowercase letters, digits
+  and `-`, 1 to 32 characters.
+  - **Default:** derived from `label`, lowercased, with every other character replaced by `-`.
+  - **Explicit `route`:** required when that derivation is empty or longer than 32 characters.
+  - **Changing it later** orphans the sessions bound to the old id, so set it explicitly for a
+    Space you already use, for example when migrating from another plugin.
+- **Base URL:** `https://<host>/v1`, where `host` comes from the Space API
+  (`GET /api/spaces/{id}`, fields `host` and `subdomain`, seen 2026-10-30), unless `baseURL` is
+  set.
+  - **Do not build it from the id.** Hugging Face lowercases the name, replaces `_` and `.` with
+    `-`, and shortens long names with a hash, so `<owner>-<name>` is often wrong.
+  - **If the API cannot be read,** the plugin reports it and does not guess.
 - **Model ids:** must match `GET /v1/models` on the Space.
 - **No real values as defaults:** an empty `spaces` list means the plugin loads and registers
   nothing.
@@ -152,7 +163,8 @@ See [examples/config.example.yml](../examples/config.example.yml). Rules:
 `RUNNING`) and then from `/v1/models`. Percent and time left use typical phase lengths.
 
 **Detailed progress, optional.** The Space prints JSON event lines to its run log, which the
-plugin reads through `/api/spaces/{id}/logs/run`:
+plugin reads through `/api/spaces/{id}/logs/run`. The line prefix is `progress.eventPrefix` in
+the Space configuration, default `SPACE_EVENT`:
 
 ```
 SPACE_EVENT {"stage": "copy_progress", "artifact": "model", "bytes": 4420796416, "total_bytes": 22533850592, "seconds": 20.0}
@@ -164,8 +176,8 @@ How the plugin uses them:
 - **Copy:** `bytes` and `total_bytes` give an exact copy percentage, and the measured rate gives
   the time left.
 - **Format:** unknown stages are ignored, and lines with other prefixes are not parsed.
-- **Legacy prefix:** the prototype's Space printed `RVN_EVENT` lines; that prefix is accepted
-  as an alias.
+- **Other prefixes:** a Space that already prints events under another prefix sets it in its own
+  configuration. The plugin ships no built-in aliases for particular Spaces.
 
 ## 8. Behavior in the chat
 
@@ -224,7 +236,7 @@ on the Harness 0.2.x line. Lessons, all verified:
 | 0. Contracts | A verified contract note: Client bundle format and what it receives (React, theme, locale), the three slots, `webServer` routes, credential APIs, HF Space endpoints | Each item verified on Harness 0.2.1-rc.3 or marked not available |
 | 1. Host | Provider routes, supervisor, HF client, routes, offline tests (HF and Space simulators) | Parity with the prototype except the UI; tests green in CI |
 | 2. Client | Indicator, sidebar tab, toasts | Manual test on the Desktop by a maintainer |
-| 3. Migration | Replace the prototype in a real profile | Same route id, sessions keep working |
+| 3. Migration | Replace the prototype in a real profile, with an explicit `route` equal to the prototype's provider id and its event prefix set in that profile | Sessions bound to the old provider id keep working |
 | 4. 1.0 | npm package, compatibility matrix, audit for secrets and personal data, repository made public | Audit clean; CI green |
 
 ## 12. Open questions

@@ -5,8 +5,18 @@
 *.credentials*
 .credentials.yaml
 auth.json
+.git-credentials
+.npmrc
+.netrc
+.pypirc
 *.pem
 *.key
+*.p12
+*.pfx
+*.jks
+id_rsa*
+id_ecdsa*
+id_ed25519*
 
 # Private denylist used by scripts/check-secrets.mjs (personal terms; local only)
 .private-denylist

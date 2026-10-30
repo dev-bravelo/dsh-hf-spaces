@@ -11,8 +11,10 @@ log or screenshot. If you think a token was exposed anywhere:
 2. create a new one;
 3. store it again in the Harness credential vault.
 
-## What this plugin does with credentials
+## How the plugin will handle credentials (planned for 1.0, not implemented yet)
 
+There is no plugin code yet. These are design requirements, to be implemented and tested before
+1.0, not guarantees:
 - **In configuration:** credentials are referenced by name (for example `HF_TOKEN`) and read
   from the DeepSeek Harness credential vault only when a request needs them.
 - **Where values never go:** configuration, logs, session events, local HTTP routes or the

@@ -94,12 +94,18 @@ its `id` (`owner/space-name`).
 
 ## Security
 
-- **Tokens are never** written to configuration, logs, events or the interface.
-- **The local HTTP routes** answer only loopback requests from the Harness window, with the
-  same checks the Harness applies to its own routes.
-- **No calls to real services in tests:** they use a simulated Hugging Face API and a
-  simulated Space.
-- **Reporting a vulnerability:** see [SECURITY.md](SECURITY.md). Never paste a token in an issue.
+**Planned for 1.0, not implemented yet** (there is no plugin code). These are design
+requirements, not guarantees:
+- tokens are never written to configuration, logs, events or the interface;
+- the local HTTP routes answer only loopback requests from the Harness window, with the same
+  checks the Harness applies to its own routes;
+- tests never call real services: they use a simulated Hugging Face API and a simulated Space.
+
+**In place now, for this repository:**
+- a secret and personal-data scanner with `pre-commit` and `commit-msg` hooks;
+- gitleaks in the pre-commit hook when it is installed. See [AGENTS.md](AGENTS.md), section 4.
+
+**Reporting a vulnerability:** see [SECURITY.md](SECURITY.md). Never paste a token in an issue.
 
 ## Compatibility
 

@@ -2,10 +2,12 @@ name: ci
 
 on:
   push:
+    branches: [main] # pull requests run through `pull_request`, so they do not run twice
   pull_request:
 
 permissions:
   contents: read
+  pull-requests: read # gitleaks-action lists the commits of a pull request through the API
 
 jobs:
   check:

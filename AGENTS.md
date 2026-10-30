@@ -61,24 +61,42 @@ the Space on demand and stopping it when idle.
 | `docs/design.md` | Architecture, Space lifecycle, configuration schema, progress protocol, platform facts, roadmap |
 | `examples/config.example.yml` | Commented configuration with fake values |
 | `scripts/check-secrets.mjs` | Secret and personal-data scanner (no dependencies) |
-| `.githooks/pre-commit` | Runs the scanner on staged files |
+| `.githooks/pre-commit` | Runs the scanner on staged files and the commit identity, then gitleaks when installed |
+| `.githooks/commit-msg` | Runs the scanner on the commit message |
 | `test/` | Offline tests (`node:test`) |
-| `.github/workflows/ci.yml` | Tests, scanner and gitleaks on every push and pull request |
+| `.github/workflows/ci.yml` | Defined workflow: tests, scanner and gitleaks. It runs only when GitHub Actions is enabled and funded for the repository, so do not rely on it as the only check |
 | `llms.txt` | Short index of this repository for language models |
 
 ## 4. Commands
 
 | Command | What it does |
 |---|---|
-| `npm run hooks` | Points git to `.githooks/` (run once per clone) |
+| `npm run hooks` | Points git to `.githooks/` (run once per clone). The hooks are committed as executable |
 | `npm run check` | Secret and personal-data scan of tracked files, then tests |
 | `npm test` | Tests only |
-| `node scripts/check-secrets.mjs --staged` | Scan only what is staged (the pre-commit hook does this) |
+| `node scripts/check-secrets.mjs --staged` | Scan staged files and the commit identity (the pre-commit hook does this) |
+| `node scripts/check-secrets.mjs --message <file>` | Scan a commit message (the commit-msg hook does this) |
 
 **Personal data is checked against a private denylist:**
 - **Where:** a local file `.private-denylist`, which is git-ignored and never committed. One
-  literal per line, for example your account name, Space ids and home path.
-- **What happens:** the scanner refuses any tracked or staged file that contains one of them.
+  literal per line, for example your account name, Space ids, home folder name and e-mail
+  domain. `DSH_PRIVATE_DENYLIST` can name another file.
+- **Required to commit.** Without it, the hooks refuse to run: a missing denylist would let
+  personal data through silently. If you have nothing personal to protect, create the file
+  with only a comment line.
+- **What happens:** the scanner refuses any staged file, commit message or commit identity
+  that contains one of the terms.
+
+**Commit identity.** Author and committer become public in history. Use your GitHub noreply
+address for this repository: `git config user.email <id>+<login>@users.noreply.github.com`. The
+pre-commit hook warns about any other address and refuses one that matches the denylist.
+
+**gitleaks.** The project scanner knows the token formats this project is likely to meet;
+gitleaks knows hundreds more. Install it so the pre-commit hook runs it too:
+- Windows: `winget install gitleaks`;
+- macOS: `brew install gitleaks`.
+
+Without it, the hook prints a note and runs only the project scanner.
 
 ## 5. Coding conventions
 
@@ -98,8 +116,10 @@ the Space on demand and stopping it when idle.
     `DSH_TEST_RUNTIME_ROOT` pointing to `<app>/resources/app.asar/dsh`.
   - **Against what:** a simulated Hugging Face API and a simulated Space on `127.0.0.1`. They
     must never touch the network beyond loopback.
-- **Evidence:** CI produces the test reports. Do not commit local test output: it contains
-  local paths.
+- **Evidence:** do not commit local test output, because it contains local paths.
+  - **What to record instead:** each change states in the CHANGELOG which tests passed, on which
+    operating system and Harness version.
+  - **CI:** when it runs, it prints results in its log. It publishes no report files.
 
 ## 7. Definition of done
 

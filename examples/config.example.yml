@@ -13,15 +13,20 @@ alerts:
 spaces:
   - id: your-user/your-llm-space      # the only required field of a Space
     label: My LLM                      # name in the model selector and in the indicator
-    # baseURL is derived from the id: https://your-user-your-llm-space.hf.space/v1
+    route: my-llm                      # provider id stored in sessions; keep it stable (see docs/design.md, section 6)
+    # baseURL: https://your-space-host.hf.space/v1   # optional; by default read from the Space API (host)
     # hardware and hourly price are read from Hugging Face when available
     models:
       - id: your-model-id              # exactly as the Space lists it in GET /v1/models
         name: My model 27B
         contextWindow: 131072
         maxTokens: 32768
-        # Harness reasoning level -> value sent as `reasoning_effort` (omit if unsupported)
-        reasoning: { off: none, low: low, medium: medium, high: high }
+        # Harness reasoning level -> `reasoning_effort` value. Model-specific: list only the values
+        # your server's chat template accepts. A Qwen3 llama.cpp template accepted none, low,
+        # medium and xhigh, and answered HTTP 500 to minimal, high and max.
+        reasoning: { off: none, low: low, medium: medium, xhigh: xhigh }
+    progress:
+      eventPrefix: SPACE_EVENT         # prefix of the optional progress lines in the Space run log
     start:
       automatic: true                  # start the Space when a message is sent to a stopped Space
       readyTimeoutMinutes: 15          # give up (and stop the Space) after this
