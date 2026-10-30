@@ -1,0 +1,32 @@
+# dsh-hf-spaces: example configuration (DESIGN STAGE, the plugin does not exist yet).
+# Every value below is fake. Replace `your-user/your-llm-space` and the model id with yours.
+# Never put a token here: `credentials` holds credential NAMES from the Harness vault.
+
+credentials:
+  inference: HF_TOKEN   # required: read access to the Space (to call the model)
+  control: HF_TOKEN     # required to start/stop: write access to the Space
+  billing: HF_TOKEN     # optional: read access to billing (cost and balance estimate)
+
+alerts:
+  lowBalanceUsd: 5      # warn when the estimated Hugging Face balance drops below this (0 = off)
+
+spaces:
+  - id: your-user/your-llm-space      # the only required field of a Space
+    label: My LLM                      # name in the model selector and in the indicator
+    # baseURL is derived from the id: https://your-user-your-llm-space.hf.space/v1
+    # hardware and hourly price are read from Hugging Face when available
+    models:
+      - id: your-model-id              # exactly as the Space lists it in GET /v1/models
+        name: My model 27B
+        contextWindow: 131072
+        maxTokens: 32768
+        # Harness reasoning level -> value sent as `reasoning_effort` (omit if unsupported)
+        reasoning: { off: none, low: low, medium: medium, high: high }
+    start:
+      automatic: true                  # start the Space when a message is sent to a stopped Space
+      readyTimeoutMinutes: 15          # give up (and stop the Space) after this
+    stop:
+      idleMinutes: 30                  # stop after this long without model requests (0 = never)
+      sessionMinutes: 60               # time limit of each start (0 = none)
+      warnMinutes: 5                   # warning before the time limit
+      extendMinutes: 60                # what one "extend" adds

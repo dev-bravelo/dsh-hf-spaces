@@ -1,0 +1,30 @@
+{
+  "name": "dsh-hf-spaces",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DeepSeek Harness plugin: use an LLM served from a GPU Hugging Face Space, started on demand and stopped when idle, with live progress, cost and balance in the Harness UI. Pre-alpha.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dev-bravelo/dsh-hf-spaces.git"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "hugging-face",
+    "huggingface-spaces",
+    "llm",
+    "llama.cpp",
+    "openai-compatible"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node scripts/check-secrets.mjs && node --test",
+    "hooks": "git config core.hooksPath .githooks"
+  }
+}

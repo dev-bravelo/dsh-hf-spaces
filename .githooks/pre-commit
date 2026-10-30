@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuse the commit when a staged file contains a secret or a term from .private-denylist.
+exec node scripts/check-secrets.mjs --staged

@@ -1,0 +1,28 @@
+# Secrets and credentials: never commit
+.env
+.env.*
+!.env.example
+*.credentials*
+.credentials.yaml
+auth.json
+*.pem
+*.key
+
+# Private denylist used by scripts/check-secrets.mjs (personal terms; local only)
+.private-denylist
+
+# Dependencies and build output
+node_modules/
+.artifacts/
+*.tgz
+
+# Local test output (contains local paths; CI produces the reports)
+verification/
+*.tap
+coverage/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

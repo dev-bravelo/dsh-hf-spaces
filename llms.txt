@@ -1,0 +1,18 @@
+# dsh-hf-spaces
+
+> A DeepSeek Harness plugin, pre-alpha and in its design phase, that lets the Harness use an LLM
+> served from a GPU Hugging Face Space. The Space starts on demand and stops when idle, and live
+> progress, cost and balance are shown in the Harness interface. Credentials are referenced by
+> name, never stored in configuration. There is no working plugin code yet.
+
+## Start here
+
+- [AGENTS.md](AGENTS.md): mandatory rules for AI agents and contributors (no secrets, no personal data, English only, offline tests)
+- [README.md](README.md): what the plugin does, credentials, configuration, compatibility, roadmap
+- [docs/design.md](docs/design.md): architecture, Space lifecycle, configuration schema, progress protocol, Hugging Face and Harness facts with dates
+
+## Reference
+
+- [examples/config.example.yml](examples/config.example.yml): commented configuration with fake values
+- [SECURITY.md](SECURITY.md): how to report a vulnerability
+- [CHANGELOG.md](CHANGELOG.md): changes by version
