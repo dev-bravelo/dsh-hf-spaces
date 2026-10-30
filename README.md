@@ -115,6 +115,14 @@ section 4.
 
 Each release will state the Harness versions it was tested on and how it was tested.
 
+**When you update DeepSeek Harness:**
+- **Inside the tested range** (`engines.dsh` in `package.json`, today `>=0.2.1-rc.3 <0.3.0-0`),
+  the plugin keeps working with no change.
+- **Outside it,** the Harness does not load the plugin. The plugin manager shows it as
+  `incompatible-version`, and the fix is a newer plugin release, not a workaround.
+
+How the plugin is kept compatible is a contributor rule: [AGENTS.md, section 7](AGENTS.md#7-compatibility-with-harness-updates).
+
 ## Roadmap
 
 | Phase | Delivers |

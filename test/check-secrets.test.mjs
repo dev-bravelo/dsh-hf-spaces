@@ -74,6 +74,7 @@ test('mask, messageBody and identEmail', () => {
 function harness({ files = {}, denylist, envDenylist, idents = {}, message, gitFails = false } = {}) {
   const out = [];
   const err = [];
+  const gitCalls = [];
   const fsFiles = new Map();
   if (denylist !== undefined) fsFiles.set('/repo/.private-denylist', Buffer.from(denylist));
   if (message !== undefined) fsFiles.set('/tmp/MSG', Buffer.from(message));
@@ -88,6 +89,7 @@ function harness({ files = {}, denylist, envDenylist, idents = {}, message, gitF
     },
     git: (args, options = {}) => {
       if (gitFails) throw new Error('not a git repository');
+      gitCalls.push(args.join(' '));
       const [cmd] = args;
       if (cmd === 'rev-parse') return '/repo\n';
       if (cmd === 'ls-files' || cmd === 'diff') return Object.keys(files).join('\0') + '\0';
@@ -104,7 +106,7 @@ function harness({ files = {}, denylist, envDenylist, idents = {}, message, gitF
     out: line => out.push(line),
     err: line => err.push(line),
   };
-  return { io, out, err };
+  return { io, out, err, gitCalls };
 }
 
 const NOREPLY = { GIT_AUTHOR_IDENT: 'x <1+x@users.noreply.github.com> 1 +0000', GIT_COMMITTER_IDENT: 'x <1+x@users.noreply.github.com> 1 +0000' };
@@ -127,6 +129,8 @@ test('cli: commit modes fail closed without a denylist; the tracked-files mode o
   const tracked = harness({ files: { 'a.md': 'ok' } });
   assert.equal(main([], tracked.io), 0);
   assert.match(tracked.err[0], /^note: no \.private-denylist/);
+  // new files are scanned before anyone stages them; git-ignored ones are not
+  assert.ok(tracked.gitCalls.includes('ls-files -z --cached --others --exclude-standard'));
 });
 
 test('cli: DSH_PRIVATE_DENYLIST naming a missing file is an error, not a silent skip', () => {

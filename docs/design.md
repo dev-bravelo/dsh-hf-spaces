@@ -51,20 +51,23 @@ models in the DeepSeek Harness model selector and use them as if they were alway
 | A paused Space keeps no hardware reserved; a restart may wait for a free GPU | Verified (an L40S was unavailable twice) | "Waiting for GPU" is a visible stage with no time estimate |
 | The account balance is not available through the API, only on the logged-in billing page. Usage is (`/api/settings/billing/usage-v2`, Unix seconds) | Verified 2026-10-27 | Balance = value the user enters − usage billed since then, labeled "estimated" |
 
-Space control endpoints (`/api/spaces/{id}/runtime`, `/pause`, `/restart`, `/variables`,
-`/hardware`, `/logs/run`) are **read** from the `huggingface_hub` client. They are to be
-**verified in Phase 0**.
+The Space endpoints, their responses and what was verified on 2026-10-30 are in
+[contracts.md](contracts.md), section 1. Two facts from there change the plan:
+- the hourly price of each hardware is public (`GET /api/spaces/hardware`);
+- the run log stays silent while a Space is paused, so it is read only while starting or
+  running, with a timeout.
 
 ### DeepSeek Harness 0.2.1-rc.3 (read in the installed package; partly verified)
 
 | Fact | Level | Consequence |
 |---|---|---|
 | The window is a web app built from Client plugins mounted in declared slots. Customizing the UI means writing a Client plugin | Read | Interface = Client half, not chat messages |
-| Slots seen in official packages: `conversation.session.header.corner`, right-sidebar tabs (`sidebarRightTabs` + `sidebar.right.pane.tab`), `shell.overlay` | Read | Indicator, sidebar tab, toasts |
-| A Host plugin can serve local HTTP routes (`webServer.register`) and stream events. A community plugin does this with a loopback-only fence | Read and verified in that plugin | State and actions for the Client half |
+| Slots for the plugin: `conversation.session.header.actions` (list), right-sidebar tabs (`sidebarRightTabs` + `sidebar.right.pane.tab`), `shell.overlay` (list). `conversation.session.header.corner` is a single slot already used by the Harness. Details in [contracts.md](contracts.md), section 2 | Read | Indicator, sidebar tab, toasts |
+| A Host plugin can serve local HTTP routes (`webServer.register`) and stream events. Routes outside `/api` get no Harness fence; the official guard is `ctx.connection.requestRejection(req)` | Read; a community plugin serves routes this way with its own, weaker check | State and actions for the Client half, every route guarded |
 | Credentials: configuration names a credential; `ctx.credentials.describe(ref)` reports whether it is set and where from, never the value; `credentials/reference-updated` signals changes | Read | Clear credential status in the UI; key rotation without restart |
 | `ctx.get(name)` returns `undefined` for a service whose plugin is not active yet; `ctx.inject([...], cb)` waits for it | Read in Cordis, and verified (see section 10) | Every optional service is injected |
 | Slash commands (`ctx.commands.register`) run without a model message, and their result renders as a chat row. In an empty session, nothing was visible | Verified | Commands are at most a shortcut, never the main interface |
+| Admission: when `package.json` declares `engines.dsh`, only that range decides whether the Harness loads the plugin, before importing it. Pre-releases count in the comparison. A refused bundle is skipped and reported as `incompatible-version` | Read on 0.2.1-rc.2; seen when other plugins were refused on the 2026-10-17 and 2026-10-27 updates | The plugin survives updates inside its range and is refused visibly outside it ([AGENTS.md, section 7](../AGENTS.md#7-compatibility-with-harness-updates)) |
 
 ## 3. Architecture
 
@@ -154,8 +157,9 @@ See [examples/config.example.yml](../examples/config.example.yml). Rules:
   nothing.
 - **Schema version:** the configuration carries `schemaVersion`, and old keys are migrated with a
   log line.
-- **Descriptions:** every field has one in English (more locales may follow), shown in the
-  Harness plugin settings.
+- **Descriptions:** every field has one in English (more locales may follow). The Harness draws
+  no page from the schema, so until the plugin ships its own settings page (Phase 2, on
+  `plugins.bundle.config`), the descriptions are in the README and the example file.
 
 ## 7. Start progress protocol
 
@@ -199,7 +203,7 @@ Only what a model request strictly needs:
 
 | Element | Slot | Content |
 |---|---|---|
-| Header indicator | `conversation.session.header.corner` | Shown only when the session's model belongs to a configured Space. State, percent and time left while starting; time on, cost of this start and "stops at hh:mm" when ready. Start, Stop and Extend buttons |
+| Header indicator | `conversation.session.header.actions` | Shown only when the session's model belongs to a configured Space. State, percent and time left while starting; time on, cost of this start and "stops at hh:mm" when ready. Start, Stop and Extend buttons |
 | Sidebar tab | right sidebar tab | One card per Space: progress bar, today's and this month's cost, estimated balance with an input, time-limit countdown, credential status, recent starts, run-log tail |
 | Toasts | `shell.overlay` | "Stops in 5 min" with Extend and Stop, low balance, start failed, credential missing |
 
@@ -234,15 +238,17 @@ on the Harness 0.2.x line. Lessons, all verified:
 | Phase | Output | Exit criterion |
 |---|---|---|
 | 0. Contracts | A verified contract note: Client bundle format and what it receives (React, theme, locale), the three slots, `webServer` routes, credential APIs, HF Space endpoints | Each item verified on Harness 0.2.1-rc.3 or marked not available |
-| 1. Host | Provider routes, supervisor, HF client, routes, offline tests (HF and Space simulators) | Parity with the prototype except the UI; `npm run check` green |
+| 1. Host | Provider routes, supervisor, HF client, routes, offline tests (HF and Space simulators), admission test with the installed Harness's own rule | Parity with the prototype except the UI; `npm run check` green; admitted on 0.2.1-rc.3 and refused from `0.3.0-alpha.1` on |
 | 2. Client | Indicator, sidebar tab, toasts | Manual test on the Desktop by a maintainer |
 | 3. Migration | Replace the prototype in a real profile, with an explicit `route` equal to the prototype's provider id and its event prefix set in that profile | Sessions bound to the old provider id keep working |
 | 4. 1.0 | npm package, compatibility matrix, audit for secrets and personal data, repository made public | Audit clean; `npm run check` green |
 
 ## 12. Open questions
 
-- Is the hourly price of each hardware readable from a public Hugging Face endpoint? Otherwise
-  it becomes a configuration value with a documented default.
-- Does the Harness plugin settings page render the configuration schema with descriptions?
+- ~~Is the hourly price of each hardware readable from a public Hugging Face endpoint?~~
+  Yes, settled in Phase 0: `GET /api/spaces/hardware` ([contracts.md](contracts.md)). A
+  configured price is only an override.
+- ~~Does the Harness plugin settings page render the configuration schema with descriptions?~~
+  No, settled in Phase 0: a plugin registers its own page ([contracts.md](contracts.md)).
 - Should a reference Space template (llama.cpp, bucket volume, `SPACE_EVENT` lines) live in
   this repository after 1.0?

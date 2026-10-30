@@ -7,9 +7,10 @@
 
 ## Start here
 
-- [AGENTS.md](AGENTS.md): mandatory rules for AI agents and contributors (no secrets, no personal data, English only, offline tests)
+- [AGENTS.md](AGENTS.md): mandatory rules for AI agents and contributors (no secrets, no personal data, English only, offline tests, no breakage on Harness updates)
 - [README.md](README.md): what the plugin does, credentials, configuration, compatibility, roadmap
 - [docs/design.md](docs/design.md): architecture, Space lifecycle, configuration schema, progress protocol, Hugging Face and Harness facts with dates
+- [docs/contracts.md](docs/contracts.md): verified Hugging Face and Harness API contracts (responses, verification level, date); read before writing code that calls them
 
 ## Reference
 

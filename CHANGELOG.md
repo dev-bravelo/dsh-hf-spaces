@@ -17,6 +17,22 @@ All notable changes are listed here. The format follows
 - Secret and personal-data scanner (`scripts/check-secrets.mjs`), a pre-commit hook and tests.
 - Rule for contributors: no complexity that is not essential (hosted CI, external tools, extra
   dependencies or features) without the maintainer's approval.
+- Rule for contributors: a DeepSeek Harness update must never break the plugin (AGENTS.md,
+  section 7). It covers the version gate, Harness packages as peers, confirmed contracts only,
+  settings that survive updates, an admission test and a checklist after each update.
+  `package.json` declares `engines.dsh: ">=0.2.1-rc.3 <0.3.0-0"`.
+- Phase 0 contract record (`docs/contracts.md`), 2026-10-30:
+  - Hugging Face Space endpoints checked read-only;
+  - DeepSeek Harness 0.2.1-rc.3 plugin APIs read in the installed package (admission verified);
+  - for each open item, whether the limit is the provider's or ours.
+
+### Changed (from Phase 0)
+
+- **Header indicator** moves to `conversation.session.header.actions`: `.corner` is a single slot
+  the Harness already uses.
+- **Hourly price** is read from the public hardware list; a configured price is only an override.
+- **Settings:** the Harness draws no page from the schema, so the plugin will register its own.
+- **Routes:** every plugin route is guarded with `ctx.connection.requestRejection`.
 
 ### Removed
 
@@ -39,6 +55,8 @@ All notable changes are listed here. The format follows
 - **Path patterns:** fewer false positives (shared Windows folders, placeholders, URL paths).
 - **CLI:** the scanner's command line has tests, and the main-module check works through
   symlinks.
+- **New files:** `npm run check` also scans new files that are not staged yet (git-ignored files
+  stay out). Before, a new document passed the check without being read.
 - **Design:**
   - the Space base URL comes from the Space API host;
   - explicit `route` provider id;

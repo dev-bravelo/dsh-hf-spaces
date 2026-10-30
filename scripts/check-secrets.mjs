@@ -3,7 +3,7 @@
  * Secret and personal-data scanner for this public repository. No dependencies.
  *
  * Usage:
- *   node scripts/check-secrets.mjs                  scan every tracked file (`npm run check`)
+ *   node scripts/check-secrets.mjs                  scan tracked and new, not ignored files (`npm run check`)
  *   node scripts/check-secrets.mjs --staged         scan staged content and the commit identity (pre-commit hook)
  *   node scripts/check-secrets.mjs --message FILE   scan a commit message (commit-msg hook)
  *
@@ -182,7 +182,7 @@ export function main(argv, io = defaultIo) {
   } else {
     const files = (staged
       ? io.git(['diff', '--cached', '--name-only', '--diff-filter=ACMRT', '-z'])
-      : io.git(['ls-files', '-z'])).split('\0').filter(Boolean);
+      : io.git(['ls-files', '-z', '--cached', '--others', '--exclude-standard'])).split('\0').filter(Boolean);
     for (const file of files) {
       let buffer;
       try {
