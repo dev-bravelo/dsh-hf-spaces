@@ -62,6 +62,21 @@ the Space on demand and stopping it when idle.
 6. **Update the docs in the same change as the behavior:** README, design and CHANGELOG.
 7. **Keep the plugin working when DeepSeek Harness is updated.** Follow
    [section 7](#7-compatibility-with-harness-updates) in every change.
+8. **Ship it ready to use, and make setup deterministic.** Assume an AI agent installs and
+   configures this plugin by following the docs.
+   - **Minimal input:** the user gives a Space id and credential names. Everything else is read
+     (Space API, Space manifest, hardware list) or has a tested default.
+   - **One source per value,** in this order: user configuration, then the Space manifest, then
+     the Hugging Face API, then a documented default. The interface shows where each effective
+     value came from.
+   - **Deterministic:** the same inputs always give the same routes and models. Never guess (for
+     example, never build a URL from an id). When a value is missing or invalid, refuse that part
+     visibly and say the fix.
+   - **Agnostic within limits:** no code branch for a particular model or Space. Model-specific
+     knowledge is data (a Space manifest or a configuration value), with the date it was
+     verified.
+   - **Install steps for agents** are commands with their expected result and a stop condition
+     ("if you see X, stop and ask the user"). They never ask for a secret value in the chat.
 
 ## 3. Repository map
 

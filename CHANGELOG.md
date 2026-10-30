@@ -33,6 +33,19 @@ All notable changes are listed here. The format follows
 - **Hourly price** is read from the public hardware list; a configured price is only an override.
 - **Settings:** the Harness draws no page from the schema, so the plugin will register its own.
 - **Routes:** every plugin route is guarded with `ctx.connection.requestRejection`.
+- **Ready to use, deterministic setup** (AGENTS.md rule 8; design, section 6): minimal input
+  (Space id and credential names), one source per value in a fixed order, no guessing, no
+  model-specific code. An optional Space manifest, `dsh-hf-spaces.json`, describes the models and
+  is read while the Space is stopped (verified on 2026-10-30). The 1.0 exit criterion now
+  includes an AI agent setting the plugin up from the install guide alone.
+- **Model selector flow** (design, section 6): provider group from `label`, the open model's
+  name, listed while the Space is stopped, effort levels from configuration in order, checked at
+  load and against the running Space (one-token request per level), live refresh, and tests.
+  It is part of the Phase 1 exit criterion.
+- **Start line in the chat** (from a real start of the prototype on 2026-10-30): it points to a
+  place the user can see, in the screen's words, and states the stop rules with their real
+  conditions (time limit counted from the start; rules only while the Harness is open). The
+  interface also shows the Space's sleep time, the only limit when the Harness is closed.
 
 ### Removed
 

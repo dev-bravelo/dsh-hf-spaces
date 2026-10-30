@@ -41,6 +41,7 @@ marked public. `{id}` is the Space id, `owner/name`.
 | `GET /api/spaces/hardware` | **Public.** Array of `{name, prettyName, cpu, ram, accelerator, unitCostMicroUSD, unitCostUSD, unitLabel}` | 21 flavors on 2026-10-30. `unitLabel` is `minute`. Examples: `a100-large` 0.041667 (US$ 2.50/h), `l40sx1` 0.03 (US$ 1.80/h), `l4x1` 0.013333 (US$ 0.80/h) |
 | `GET /api/settings/billing/usage-v2?startDate=<s>&endDate=<s>` | `{usage: {Spaces, Endpoints, inferenceProviders, jobs, privateStorage, zeroGpu}}` | Dates in Unix seconds. Works with a fine-grained token that has `user.billing.read` |
 | `GET /api/spaces/{id}/logs/run` | Server-sent events. Each `data:` line is JSON whose `data` field is one log line. Optional `?tail=<n>` | **While the Space is paused, the server sends no response headers** (see below). While a Space starts or runs, the private prototype read its progress events from this stream on every start |
+| `GET https://huggingface.co/spaces/{id}/resolve/{sha}/{file}` | The raw file from the Space repository at revision `sha` | Read on a **paused** private Space in 140 ms (HTTP 200 with the token, 401 without). Nothing starts. `GET /api/spaces/{id}` → `siblings[].rfilename` lists the files first. `cardData` only held the README's display fields (`title`, `emoji`, `colorFrom`, `colorTo`, `sdk`, `app_port`) |
 | `GET /api/spaces/{id}/volumes` | **Not available:** HTTP 404 | Read volumes from `GET /api/spaces/{id}` → `runtime.volumes`: `[{type, source, mountPath, readOnly, configuredByUserId}]` |
 
 **The silent run log is provider behavior, not a client error.** Tested on 2026-10-30 on a
@@ -149,6 +150,25 @@ Nothing in this section was run in Phase 0, so every item is **Read** unless mar
 `{provider, model, reasoningEffort?}`. `undefined` means the catalog default
 (`dsh-client-ui-model-selection`; official agent-team client).
 
+### Model selector
+
+| Contract | Detail | Source |
+|---|---|---|
+| Provider route | A `dsh-llm-pi-ai` route declares `displayName` (the label the selector shows), `api`, `baseURL`, `apiKeyEnv` and `models`. A hand-declared route id is a lowercase hyphenated identifier | `dsh-llm-pi-ai` README |
+| Model entry | `models[]` has `id`, `name`, `contextWindow`, `maxTokens` and `reasoningEfforts`. A `models` list replaces the route's catalog | Same |
+| Effort levels | `reasoningEfforts` maps each level the selector offers to the value sent on the wire (`max: ultra` renames a level). `false` declares a model without reasoning. Exact-model metadata lists the levels from least to greatest | Same |
+| What the selector shows | Models grouped by provider, by catalog name. The selected model decides which effort names exist and the default. Only levels the adapter advertises are offered: no free input, and no Effort row without reasoning metadata | `dsh-client-ui-model-selection` README |
+| Refresh | Each session's model list loads again on `llm/adapters-updated`, `settings/document-updated` and credential events | Same |
+| Model discovery | For a route the installed catalog does not describe, pi-ai can list `GET {baseURL}/models`. The reply is only a suggestion for a settings page; the configuration decides what the route serves | `dsh-llm-pi-ai` README |
+| Name decoration | `conversation.input.model.label` is a single slot, already used by an official package | Code; not used by this plugin |
+
+**Verified on 2026-10-30, Desktop 0.2.1-rc.3, with the private prototype:** a route built the
+same way showed the model name and the effort "Medium" in the composer.
+
+**Verified on 2026-09-21, on the prototype's Space:** its llama.cpp Qwen chat template answered
+HTTP 500 to the efforts `minimal`, `high` and `max`, and accepted `none`, `low`, `medium` and
+`xhigh`. Unsupported levels are rejected visibly, not ignored, so the plugin can check them.
+
 ### Settings page
 
 - **The Harness does not draw a page from `Config`.** The `dsh-settings` README says
@@ -216,6 +236,8 @@ Each open item says whose limit it is and what would settle it.
 | A second registrant on a single slot | Ours: not tested | Avoided by design: the plugin uses list and keyed slots only |
 | `EventSource` over the `dsh-app://` scheme | Ours: not tested | Not needed: the Client reads the stream with `fetch` |
 | `dsh.client.immediately` | Provider: set in the official template, not documented | Leave it as the template sets it |
+| How the selector picks the default effort of a model | Provider: not documented | A runtime test in Phase 1 |
+| Whether every chat template rejects an unknown effort (HTTP 500), or some ignore it | Ours: seen on one llama.cpp Qwen template only | The effort check of each new Space, in Phase 1 |
 
 Settled in Phase 0 as provider behavior:
 - `GET /api/spaces/{id}/volumes` does not exist; volumes are in `GET /api/spaces/{id}`.

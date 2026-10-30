@@ -111,6 +111,9 @@ Further rules:
   before it, and Extend adds `extendMinutes`. If an answer is streaming, or a model request
   happened within the last few minutes, the pause waits up to 10 minutes for the turn to finish.
 - **Space started outside the Harness:** idle rules only; no time limit.
+- **Harness closed while the Space runs:** the plugin cannot pause it. The Space's sleep time
+  (`gcTimeout`, read from the runtime API) is then the only limit, and the interface shows it
+  next to the plugin's own rules.
 - **After a failed start:** no automatic retry for a cooldown period. A manual Start ignores the
   cooldown.
 - **History:** every transition is recorded as one JSON line in the plugin's state folder (no
@@ -161,6 +164,81 @@ See [examples/config.example.yml](../examples/config.example.yml). Rules:
   no page from the schema, so until the plugin ships its own settings page (Phase 2, on
   `plugins.bundle.config`), the descriptions are in the README and the example file.
 
+### Ready to use: where each value comes from
+
+The plugin must work from the smallest input a user (or an AI agent installing it) can give: a
+Space id and the credential names. Every other value has one source, in this order:
+
+| Order | Source | Holds |
+|---|---|---|
+| 1 | User configuration | Anything the user wants to override |
+| 2 | Space manifest (optional file in the Space repository, below) | Models, names, context sizes, effort levels, progress prefix, the Space's own idle pause |
+| 3 | Hugging Face API | Base URL (`host`), stage, hardware and its price, sleep time, revision (`sha`) |
+| 4 | Documented default | The rest, for example `idleMinutes: 30` |
+
+Rules:
+- **Shown, not hidden:** the interface lists each effective value with its source, so a wrong
+  value can be traced to the place that set it.
+- **No guessing:** a value no source provides is not invented. That part is refused with the fix,
+  for example "no model listed: add `models` to the configuration or a manifest to the Space".
+- **No model-specific code:** what differs between models and servers lives in the manifest or
+  the configuration, as data.
+
+### Space manifest (optional)
+
+A Space can describe what it serves in a file at the root of its repository,
+`dsh-hf-spaces.json`. The plugin reads it while the Space is stopped, so it can list the models
+without starting the GPU.
+
+- **How it is read:** `GET https://huggingface.co/spaces/{id}/resolve/{sha}/dsh-hf-spaces.json`
+  with the inference credential, pinned to the revision `sha` from `GET /api/spaces/{id}`. It is
+  read again only when `sha` changes.
+- **Verified 2026-10-30** on a paused private Space: a configuration file in the Space
+  repository came back in 140 ms with the token (HTTP 200), and HTTP 401 without it. The Space
+  stayed paused. `GET /api/spaces/{id}` also lists the repository files (`siblings`), so a missing
+  manifest is known without a failed request.
+- **Contents, version 1:**
+
+```json
+{
+  "schemaVersion": 1,
+  "models": [
+    {
+      "id": "model-id-as-listed-by-v1-models",
+      "name": "Open model name",
+      "contextWindow": 131072,
+      "maxTokens": 32768,
+      "reasoning": { "off": "none", "low": "low", "medium": "medium", "xhigh": "xhigh" }
+    }
+  ],
+  "progress": { "eventPrefix": "SPACE_EVENT" },
+  "idleSeconds": 3600
+}
+```
+
+- **Field meanings:** as in the configuration (section 6). `idleSeconds` is the Space's own
+  pause after inactivity, which the interface shows as the only limit when the Harness is closed.
+- **Validation:** same rules as the configuration. An invalid manifest is reported and ignored
+  as a whole, never applied in part.
+- **Without a manifest,** the user lists the models in the configuration.
+
+### Model names and reasoning efforts in the selector
+
+The path from configuration to the Harness model selector must be complete and orderly. Every
+step below is part of the Phase 1 exit criterion. Contracts: [contracts.md](contracts.md),
+section 2, "Model selector".
+
+| Step | Rule | Why |
+|---|---|---|
+| 1. Provider group | Each Space is one provider route. Its `label` becomes the route's `displayName`, the group heading in the selector | The user sees where the model runs |
+| 2. Model name | Each model's `name` is the open model's name as people know it (for example "Qwen3.8 27B"). It is the row in the selector and the text in the composer. Without `name`, the `id` is shown. The name never carries the effort level | The selector shows the catalog name as it is |
+| 3. Listed while stopped | Names and efforts come from the configuration or the Space manifest, so the model can be picked while the Space is paused. Picking it never starts the Space; only sending a message does | No network call and no cost to choose a model |
+| 4. Effort levels | `reasoning` maps each Harness level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) to the value the server accepts, listed from least to greatest effort. `false` means no reasoning control, and the selector then shows no Effort row. The selector offers only these levels; it has no free input | The server rejects values its chat template does not know |
+| 5. Checked at load | An unknown level name, an empty value or an empty map refuses that model, with the reason in the log and in the plugin's interface. Nothing is dropped silently | Rule "fail visibly" (AGENTS.md, section 7) |
+| 6. Checked against the Space | When the Space is ready, the model `id` must appear in `GET /v1/models`, and each configured level is tried once with a one-token request. A rejected level is shown in the interface, with the fix: remove it from `reasoning`. Results are kept per configuration and Space revision (`sha` from `GET /api/spaces/{id}`), so the check runs again only after a change | A llama.cpp Qwen template answered HTTP 500 to `minimal`, `high` and `max` (tested 2026-09-21), so a rejection is visible and testable |
+| 7. Live update | A change to names or levels in the configuration registers the route again, and the selector refreshes by itself on `llm/adapters-updated`, with no restart | The user sees the change at once |
+| 8. Tests | Offline: the route built from the example configuration has the exact names and the levels in order. Runtime, on the installed Harness: the session's model list shows the model name and only those levels | Proof that steps 1 to 7 hold |
+
 ## 7. Start progress protocol
 
 **Generic progress, any Space.** It comes from the runtime stage (`BUILDING` → `APP_STARTING` →
@@ -189,7 +267,13 @@ Only what a model request strictly needs:
 
 1. **A message arrives while the Space is stopped.** The request is answered with one short
    fixed line, written as the plugin, never as the assistant, for example: "dsh-hf-spaces is
-   starting My LLM; follow the progress in the header". Then the turn ends.
+   starting My LLM; follow the progress in the header". Then the turn ends. The line must:
+   - **point to a place the user can see,** in the words the screen uses. The prototype pointed
+     to a background task by its label, but the screen showed only a collapsed "1 background
+     job running", and the user did not find it;
+   - **state the stop rules with their real conditions:** the time limit counts from the start,
+     so start time comes out of it, and the plugin's rules apply only while the Harness is
+     open. When it is closed, only the Space's own sleep time protects the account.
 2. **When the Space is ready,** the session is resumed with one plugin message. It quotes the
    user's waiting message and states that the earlier line came from the plugin.
    - **Why:** without that, a model treated "the last user message" as the plugin's notice,
@@ -238,17 +322,20 @@ on the Harness 0.2.x line. Lessons, all verified:
 | Phase | Output | Exit criterion |
 |---|---|---|
 | 0. Contracts | A verified contract note: Client bundle format and what it receives (React, theme, locale), the three slots, `webServer` routes, credential APIs, HF Space endpoints | Each item verified on Harness 0.2.1-rc.3 or marked not available |
-| 1. Host | Provider routes, supervisor, HF client, routes, offline tests (HF and Space simulators), admission test with the installed Harness's own rule | Parity with the prototype except the UI; `npm run check` green; admitted on 0.2.1-rc.3 and refused from `0.3.0-alpha.1` on |
-| 2. Client | Indicator, sidebar tab, toasts | Manual test on the Desktop by a maintainer |
-| 3. Migration | Replace the prototype in a real profile, with an explicit `route` equal to the prototype's provider id and its event prefix set in that profile | Sessions bound to the old provider id keep working |
-| 4. 1.0 | npm package, compatibility matrix, audit for secrets and personal data, repository made public | Audit clean; `npm run check` green |
+| 1. Host | Provider routes, supervisor, HF client, Space manifest reader with the value order of section 6, routes, offline tests (HF and Space simulators), admission test with the installed Harness's own rule | Parity with the prototype except the UI; `npm run check` green; admitted on 0.2.1-rc.3 and refused from `0.3.0-alpha.1` on; the model appears in the selector with its name and only the effort levels the Space accepts (section 6, "Model names and reasoning efforts") |
+| 2. Client | Indicator, sidebar tab, toasts, and a setup page that lists each check (credentials, Space, manifest, models, effort levels) and each effective value with its source | Manual test on the Desktop by a maintainer |
+| 3. Migration | Replace the prototype in a real profile, with an explicit `route` equal to the prototype's provider id and its event prefix set in that profile. The prototype's Space gets a manifest, so the profile keeps only the Space id, the route and the credential names | Sessions bound to the old provider id keep working |
+| 4. 1.0 | npm package, compatibility matrix, audit for secrets and personal data, install guide for AI agents, repository made public | Audit clean; `npm run check` green; an AI agent that follows only the install guide sets the plugin up on a clean profile, without asking for a secret in the chat |
 
 ## 12. Open questions
 
 - ~~Is the hourly price of each hardware readable from a public Hugging Face endpoint?~~
   Yes, settled in Phase 0: `GET /api/spaces/hardware` ([contracts.md](contracts.md)). A
   configured price is only an override.
+- Which effort level does the selector pick by default when the user picks the model? The
+  model-selection README speaks of "the selected model's default effort" without saying how it is
+  chosen. A runtime test in Phase 1 answers it; `medium`, when listed, is the wanted default.
 - ~~Does the Harness plugin settings page render the configuration schema with descriptions?~~
   No, settled in Phase 0: a plugin registers its own page ([contracts.md](contracts.md)).
-- Should a reference Space template (llama.cpp, bucket volume, `SPACE_EVENT` lines) live in
-  this repository after 1.0?
+- Should a reference Space template (llama.cpp, bucket volume, `SPACE_EVENT` lines, a
+  `dsh-hf-spaces.json` manifest) live in this repository after 1.0?

@@ -16,9 +16,11 @@ spaces:
     route: my-llm                      # provider id stored in sessions; keep it stable (see docs/design.md, section 6)
     # baseURL: https://your-space-host.hf.space/v1   # optional; by default read from the Space API (host)
     # hardware and hourly price are read from Hugging Face when available
+    # models: optional when the Space has a dsh-hf-spaces.json manifest (docs/design.md, section 6);
+    # values set here override the manifest.
     models:
       - id: your-model-id              # exactly as the Space lists it in GET /v1/models
-        name: My model 27B
+        name: My model 27B             # the open model's name as people know it; shown in the model selector
         contextWindow: 131072
         maxTokens: 32768
         # Harness reasoning level -> `reasoning_effort` value. Model-specific: list only the values
