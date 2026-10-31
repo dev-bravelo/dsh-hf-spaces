@@ -3,6 +3,7 @@
  * refuses that Space (or one of its models) with a message that says the fix, and never stops the
  * other Spaces. See docs/design.md, section 6.
  */
+import { normalizeStop } from './rules.mjs';
 
 /** Harness reasoning levels, from least to greatest effort. */
 export const HARNESS_LEVELS = Object.freeze(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
@@ -15,7 +16,10 @@ export const DEFAULTS = Object.freeze({
   eventPrefix: 'SPACE_EVENT',
   // A cold start of a 27B model on an A100 took 3.7 min on 2026-10-30; a GPU queue adds more.
   readyTimeoutMinutes: 15,
+  locale: 'en',
+  pollSeconds: 5,
 });
+const LOCALES = ['en', 'pt-BR'];
 const READY_TIMEOUT_MAX = 120;
 const HARDWARE_FLAVOR = /^[a-z0-9][a-z0-9-]*$/;
 
@@ -122,6 +126,29 @@ function credentialName(value, fallback, key, problems) {
   return fallback;
 }
 
+const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const MAX_VARIABLES_JSON = 4096;
+const HOLDS_TOKEN = /hf_[A-Za-z0-9]{20,}/;
+
+/**
+ * Start variables: Space variables written before each start this plugin makes, declared as data
+ * (strings or JSON values, with the placeholders of supervisor.mjs renderStartVariable).
+ * Space variables are not secret, so a value holding a token is refused.
+ * @returns {{ variables: object | undefined } | { problem: string }}
+ */
+export function normalizeStartVariables(raw, where = 'start.variables') {
+  if (raw === undefined || raw === null) return { variables: undefined };
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { problem: `${where} must map variable names to values` };
+  for (const [name, value] of Object.entries(raw)) {
+    if (!VARIABLE_NAME.test(name)) return { problem: `${where}: "${name}" is not a variable name (letters, digits, _)` };
+    if (HOLDS_TOKEN.test(JSON.stringify(value) ?? '')) {
+      return { problem: `${where}: "${name}" holds a token; Space variables can be read by anyone who can see the Space, so use a Space secret instead (remove the token here and revoke it)` };
+    }
+  }
+  if (JSON.stringify(raw).length > MAX_VARIABLES_JSON) return { problem: `${where} is larger than ${MAX_VARIABLES_JSON} characters` };
+  return { variables: raw };
+}
+
 /**
  * `baseURL` set by the user. The inference token travels with every model request, so only a
  * Space address is allowed (https://<subdomain>.hf.space), or this machine for offline tests.
@@ -145,6 +172,16 @@ export function normalizeConfig(raw = {}) {
     control: credentialName(raw.credentials?.control, DEFAULTS.credentials.control, 'control', problems),
     billing: credentialName(raw.credentials?.billing, DEFAULTS.credentials.billing, 'billing', problems),
   };
+  let locale = raw.locale ?? DEFAULTS.locale;
+  if (!LOCALES.includes(locale)) {
+    problems.push(`locale "${locale}" is not available; use ${LOCALES.join(' or ')}`);
+    locale = DEFAULTS.locale;
+  }
+  let pollSeconds = raw.pollSeconds ?? DEFAULTS.pollSeconds;
+  if (!Number.isSafeInteger(pollSeconds) || pollSeconds < 1 || pollSeconds > 60) {
+    problems.push('pollSeconds must be a whole number from 1 to 60');
+    pollSeconds = DEFAULTS.pollSeconds;
+  }
   const spaces = [];
   const routes = new Set();
   for (const [index, entry] of (Array.isArray(raw.spaces) ? raw.spaces : []).entries()) {
@@ -177,6 +214,16 @@ export function normalizeConfig(raw = {}) {
       problems.push(`${where}: start.readyTimeoutMinutes must be a whole number from 1 to ${READY_TIMEOUT_MAX}`);
       continue;
     }
+    const startVariables = normalizeStartVariables(entry.start?.variables);
+    if ('problem' in startVariables) {
+      problems.push(`${where}: ${startVariables.problem}`);
+      continue;
+    }
+    const stopResult = normalizeStop(entry.stop);
+    if ('problem' in stopResult) {
+      problems.push(`${where}: ${stopResult.problem}`);
+      continue;
+    }
     routes.add(route);
     spaces.push({
       id,
@@ -188,7 +235,10 @@ export function normalizeConfig(raw = {}) {
       ...(typeof entry.progress?.eventPrefix === 'string' && entry.progress.eventPrefix ? { eventPrefix: entry.progress.eventPrefix } : {}),
       ...(entry.hardware === undefined ? {} : { hardware: entry.hardware }),
       readyTimeoutMinutes,
+      automatic: entry.start?.automatic !== false,
+      stop: stopResult.stop,
+      ...(startVariables.variables ? { startVariables: startVariables.variables } : {}),
     });
   }
-  return { credentials, spaces, problems };
+  return { credentials, locale, pollSeconds, spaces, problems };
 }

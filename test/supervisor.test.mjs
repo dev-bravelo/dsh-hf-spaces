@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createSupervisor, describeState, isPaused, stageKind } from '../src/supervisor.mjs';
+import { createSupervisor, describeState, isPaused, renderStartVariable, stageKind } from '../src/supervisor.mjs';
 
 /**
  * An in-memory Space that behaves like the Hugging Face API: a restart boots after `bootPolls`
@@ -282,4 +282,33 @@ test('check: reads the state without starting or stopping anything', async () =>
   const client = fakeSpace();
   await supervised(client).supervisor.check();
   assert.deepEqual(client.calls, ['runtime']);
+});
+
+test('start variables: rendered from data and written before the restart (the start handshake of a Space)', async () => {
+  const client = fakeSpace();
+  const written = [];
+  client.setVariable = async (id, key, value) => { client.calls.push(`variable ${key}`); written.push([key, value]); };
+  const template = { id: '{{uuid}}', startup_deadline: '{{readyDeadline}}', max_deadline: 0 };
+  const { supervisor } = supervised(client, { readyTimeoutMinutes: 20, startVariables: { RVN_SESSION: template } });
+  assert.equal((await supervisor.start()).phase, 'ready');
+  assert.deepEqual(client.calls.slice(0, 3), ['runtime', 'variable RVN_SESSION', 'restart'], 'written before the restart');
+  const session = JSON.parse(written[0][1]);
+  assert.match(session.id, /^[0-9a-f-]{36}$/);
+  assert.equal(session.startup_deadline, 20 * 60, 'Unix seconds: the fake clock starts at 0');
+  assert.equal(session.max_deadline, 0);
+  // Not written when the Space already serves: nothing is started.
+  const running = fakeSpace({ stage: 'RUNNING', current: 'a100-large' });
+  running.setVariable = async () => { running.calls.push('variable'); };
+  await supervised(running, { startVariables: { RVN_SESSION: template } }).supervisor.start();
+  assert.ok(!running.calls.includes('variable'));
+});
+
+test('start variables: placeholders inside text, exact placeholders keep their type', () => {
+  const at = Date.UTC(2026, 9, 31, 12, 0, 0);
+  assert.equal(renderStartVariable('started at {{now}}', { now: at, readyTimeoutMinutes: 15 }), `started at ${at / 1000}`);
+  assert.equal(renderStartVariable({ n: '{{now}}' }, { now: at, readyTimeoutMinutes: 15 }), `{"n":${at / 1000}}`);
+  assert.equal(renderStartVariable('plain', { now: at, readyTimeoutMinutes: 15 }), 'plain');
+  // Only the listed placeholders are replaced, never an inherited name.
+  assert.equal(renderStartVariable('constructor', { now: at, readyTimeoutMinutes: 15 }), 'constructor');
+  assert.equal(renderStartVariable({ k: 'toString' }, { now: at, readyTimeoutMinutes: 15 }), '{"k":"toString"}');
 });

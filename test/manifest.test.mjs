@@ -56,6 +56,17 @@ test('the configuration wins over the manifest, and the manifest over the API', 
   assert.deepEqual(noManifestIdle.eventPrefix, { value: 'SPACE_EVENT', source: 'default' });
 });
 
+test('start variables: from the manifest unless the configuration declares its own', () => {
+  const declared = { SPACE_SESSION: { id: '{{uuid}}' } };
+  const manifest = parseManifest(manifestText({ startVariables: declared })).manifest;
+  assert.deepEqual(manifest.startVariables, declared);
+  assert.deepEqual(effectiveSpace(configured(), API, manifest).space.startVariables, declared);
+  const own = { MY_START: 'x' };
+  assert.deepEqual(effectiveSpace(configured({ start: { variables: own } }), API, manifest).space.startVariables, own);
+  assert.equal('startVariables' in effectiveSpace(configured(), API, parseManifest(manifestText()).manifest).space, false);
+  assert.match(parseManifest(manifestText({ startVariables: { 'BAD NAME': 1 } })).problem, /startVariables: "BAD NAME" is not a variable name/);
+});
+
 test('no guessing: a missing address or model list is refused with the fix', () => {
   assert.match(effectiveSpace(configured(), undefined, undefined).problem, /address is unknown.*set `baseURL`/);
   assert.match(effectiveSpace(configured(), API, undefined).problem, /no model listed; add `models`.*dsh-hf-spaces\.json/);

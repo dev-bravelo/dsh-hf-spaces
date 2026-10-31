@@ -1,6 +1,6 @@
 {
   "name": "dsh-hf-spaces",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.6",
   "private": true,
   "description": "DeepSeek Harness plugin: use an LLM served from a GPU Hugging Face Space, started on demand and stopped when idle, with live progress, cost and balance in the Harness UI. Pre-alpha.",
   "license": "MIT",
@@ -22,11 +22,13 @@
   "main": "./src/index.mjs",
   "exports": {
     ".": "./src/index.mjs",
+    "./client": "./client/index.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
     "src",
+    "client",
     "cordis.patch.yml",
     "docs",
     "examples",
@@ -45,11 +47,19 @@
     "@deepseek-ai/schemastery": "^3.18.1",
     "@deepseek-ai/dsh-credentials": ">=0.2.1-rc.3 <0.3.0-0",
     "@deepseek-ai/dsh-llm": ">=0.2.1-rc.3 <0.3.0-0",
-    "@deepseek-ai/dsh-llm-pi-ai": ">=0.2.1-rc.3 <0.3.0-0"
+    "@deepseek-ai/dsh-llm-pi-ai": ">=0.2.1-rc.3 <0.3.0-0",
+    "@deepseek-ai/dsh-session-format-catalog": ">=0.2.1-rc.3 <0.3.0-0"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
     }
   },
   "scripts": {

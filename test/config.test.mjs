@@ -110,3 +110,17 @@ test('defaultEffort must be a Harness level', () => {
   assert.equal(spaces.length, 0);
   assert.match(problems[0], /defaultEffort "turbo"/);
 });
+
+test('start variables: names and size are checked; values are data', () => {
+  const ok = normalizeConfig({ spaces: [{ id: 'your-user/your-llm-space', start: { variables: { SPACE_SESSION: { id: '{{uuid}}' } } } }] });
+  assert.deepEqual(ok.spaces[0].startVariables, { SPACE_SESSION: { id: '{{uuid}}' } });
+  const bad = normalizeConfig({ spaces: [{ id: 'your-user/your-llm-space', start: { variables: { 'NOT A NAME': 'x' } } }] });
+  assert.equal(bad.spaces.length, 0);
+  assert.match(bad.problems[0], /"NOT A NAME" is not a variable name/);
+  // Space variables are public to whoever sees the Space: a token there is refused, never repeated.
+  const pasted = ['hf', '_', 'A1b2'.repeat(9)].join('');
+  const leaked = normalizeConfig({ spaces: [{ id: 'your-user/your-llm-space', start: { variables: { SPACE_SESSION: { key: `Bearer ${pasted}` } } } }] });
+  assert.equal(leaked.spaces.length, 0);
+  assert.match(leaked.problems[0], /"SPACE_SESSION" holds a token; .*use a Space secret instead/);
+  assert.ok(!leaked.problems[0].includes(pasted));
+});

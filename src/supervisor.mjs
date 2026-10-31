@@ -39,6 +39,30 @@ export const PAUSE_CONFIRM_MS = 3 * 60000;
 const BILLING_WARNING = 'the pause was not confirmed; the GPU may still bill. Pause the Space on Hugging Face';
 const LEFT_RUNNING = 'the Space was already running or starting when this start began, so it was left as it is';
 
+/**
+ * Renders a start variable declared as data (docs/design.md, section 4). A string that is exactly
+ * a placeholder becomes its value; placeholders inside longer strings are replaced as text.
+ * - `{{uuid}}`: a new random id for each start
+ * - `{{now}}`: Unix seconds at the start
+ * - `{{readyDeadline}}`: Unix seconds when the plugin gives up (now + start.readyTimeoutMinutes)
+ * Objects are written as compact JSON, the form a Space reads from one variable.
+ */
+export function renderStartVariable(value, { now, readyTimeoutMinutes, uuid = () => crypto.randomUUID() }) {
+  const seconds = Math.floor(now / 1000);
+  const exact = { '{{now}}': seconds, '{{readyDeadline}}': seconds + readyTimeoutMinutes * 60 };
+  const render = (v) => {
+    if (typeof v === 'string') {
+      if (Object.hasOwn(exact, v)) return exact[v];
+      return v.replace(/\{\{(uuid|now|readyDeadline)\}\}/g, name => (name === '{{uuid}}' ? uuid() : String(exact[name])));
+    }
+    if (Array.isArray(v)) return v.map(render);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, render(x)]));
+    return v;
+  };
+  const rendered = render(value);
+  return typeof rendered === 'string' ? rendered : JSON.stringify(rendered);
+}
+
 /** Waits without keeping the process alive; rejects when `signal` aborts. */
 const abortableSleep = (ms, signal) => delay(ms, undefined, { signal, ref: false });
 
@@ -125,6 +149,11 @@ export function createSupervisor({ space, client, onChange, now = Date.now, slee
       if (check.fatal) return failStart(check.fatal, signal, false);
     }
     if (kind === 'stopped' || kind === 'error') {
+      // The Space's own start handshake, if it declares one (for example a fresh start deadline).
+      for (const [key, value] of Object.entries(space.startVariables ?? {})) {
+        await client.setVariable(space.id, key, renderStartVariable(value, { now: now(), readyTimeoutMinutes: space.readyTimeoutMinutes }));
+        signal.throwIfAborted();
+      }
       runtime = space.hardware && runtime.requested !== space.hardware
         ? await client.requestHardware(space.id, space.hardware) // restarts on the new hardware
         : await client.restart(space.id);
@@ -159,8 +188,8 @@ export function createSupervisor({ space, client, onChange, now = Date.now, slee
 
   async function runStop(reason, signal) {
     set('stopping', { reason });
-    const { paused } = await pauseConfirmed(signal);
-    return paused ? set('off', { reason }) : set('failed', { reason, paused: false, warning: BILLING_WARNING });
+    const { paused, already } = await pauseConfirmed(signal);
+    return paused ? set('off', { reason, ...(already ? { already: true } : {}) }) : set('failed', { reason, paused: false, warning: BILLING_WARNING });
   }
 
   function begin(kind, run) {

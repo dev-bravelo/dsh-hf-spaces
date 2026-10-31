@@ -62,7 +62,7 @@ The Space endpoints, their responses and what was verified on 2026-10-30 are in
 | Fact | Level | Consequence |
 |---|---|---|
 | The window is a web app built from Client plugins mounted in declared slots. Customizing the UI means writing a Client plugin | Read | Interface = Client half, not chat messages |
-| Slots for the plugin: `conversation.session.header.actions` (list), right-sidebar tabs (`sidebarRightTabs` + `sidebar.right.pane.tab`), `shell.overlay` (list). `conversation.session.header.corner` is a single slot already used by the Harness. Details in [contracts.md](contracts.md), section 2 | Read | Indicator, sidebar tab, toasts |
+| Slots for the plugin: `conversation.session.header.utilities` (list, used by the official open-in-app plugin), right-sidebar tabs (`sidebarRightTabs` + `sidebar.right.pane.tab`), `shell.overlay` (list). `conversation.session.header.corner` is a single slot already used by the Harness. Details in [contracts.md](contracts.md), section 2 | Read | Indicator, sidebar tab, toasts |
 | A Host plugin can serve local HTTP routes (`webServer.register`) and stream events. Routes outside `/api` get no Harness fence; the official guard is `ctx.connection.requestRejection(req)` | Read; a community plugin serves routes this way with its own, weaker check | State and actions for the Client half, every route guarded |
 | Credentials: configuration names a credential; `ctx.credentials.describe(ref)` reports whether it is set and where from, never the value; `credentials/reference-updated` signals changes | Read | Clear credential status in the UI; key rotation without restart |
 | `ctx.get(name)` returns `undefined` for a service whose plugin is not active yet; `ctx.inject([...], cb)` waits for it | Read in Cordis, and verified (see section 10) | Every optional service is injected |
@@ -110,6 +110,9 @@ Further rules:
 - **Time limit:** counted from the start made by this plugin. A warning comes `warnMinutes`
   before it, and Extend adds `extendMinutes`. If an answer is streaming, or a model request
   happened within the last few minutes, the pause waits up to 10 minutes for the turn to finish.
+- **Start variables:** before a start it makes, the plugin writes the Space variables declared in
+  `start.variables` (or the manifest's `startVariables`), rendered from placeholders. A Space that
+  needs a fresh deadline or session id at each boot declares it as data.
 - **Space started outside the Harness:** idle rules only; no time limit.
 - **Harness closed while the Space runs:** the plugin cannot pause it. The Space's sleep time
   (`gcTimeout`, read from the runtime API) is then the only limit, and the interface shows it
@@ -287,7 +290,7 @@ Only what a model request strictly needs:
 
 | Element | Slot | Content |
 |---|---|---|
-| Header indicator | `conversation.session.header.actions` | Shown only when the session's model belongs to a configured Space. State, percent and time left while starting; time on, cost of this start and "stops at hh:mm" when ready. Start, Stop and Extend buttons |
+| Header indicator | `conversation.session.header.utilities` | Shown only when the session's model belongs to a configured Space. State, percent and time left while starting; time on, cost of this start and "stops at hh:mm" when ready. Start, Stop and Extend buttons |
 | Sidebar tab | right sidebar tab | One card per Space: progress bar, today's and this month's cost, estimated balance with an input, time-limit countdown, credential status, recent starts, run-log tail |
 | Toasts | `shell.overlay` | "Stops in 5 min" with Extend and Stop, low balance, start failed, credential missing |
 

@@ -3,7 +3,7 @@
  * every source into one effective Space, each value tagged with where it came from.
  * See docs/design.md, section 6, "Ready to use" and "Space manifest".
  */
-import { DEFAULTS, PREFERRED_DEFAULT_EFFORT, normalizeModels } from './config.mjs';
+import { DEFAULTS, PREFERRED_DEFAULT_EFFORT, normalizeModels, normalizeStartVariables } from './config.mjs';
 
 export const MANIFEST_FILE = 'dsh-hf-spaces.json';
 export const MANIFEST_VERSION = 1;
@@ -25,6 +25,9 @@ export function parseManifest(text) {
     if (typeof raw.progress.eventPrefix !== 'string' || !raw.progress.eventPrefix) return { problem: `${MANIFEST_FILE}: progress.eventPrefix must be text` };
     manifest.eventPrefix = raw.progress.eventPrefix;
   }
+  const startVariables = normalizeStartVariables(raw.startVariables, `${MANIFEST_FILE}: startVariables`);
+  if ('problem' in startVariables) return { problem: startVariables.problem };
+  if (startVariables.variables) manifest.startVariables = startVariables.variables;
   if (raw.idleSeconds !== undefined) {
     if (!Number.isSafeInteger(raw.idleSeconds) || raw.idleSeconds <= 0) return { problem: `${MANIFEST_FILE}: idleSeconds must be a positive whole number` };
     manifest.idleSeconds = raw.idleSeconds;
@@ -86,6 +89,9 @@ export function effectiveSpace(space, api, manifest) {
       ...(api?.sha ? { sha: api.sha } : {}),
       ...(space.hardware ? { hardware: space.hardware } : {}),
       readyTimeoutMinutes: space.readyTimeoutMinutes,
+      automatic: space.automatic,
+      stop: space.stop,
+      ...(space.startVariables ?? manifest?.startVariables ? { startVariables: space.startVariables ?? manifest.startVariables } : {}),
     },
   };
 }

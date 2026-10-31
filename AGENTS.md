@@ -89,7 +89,8 @@ the Space on demand and stopping it when idle.
 | `scripts/check-secrets.mjs` | Secret and personal-data scanner (no dependencies) |
 | `.githooks/pre-commit` | Runs the scanner on staged files and the commit identity |
 | `.githooks/commit-msg` | Runs the scanner on the commit message |
-| `src/` | Plugin code. `config.mjs`, `manifest.mjs`, `route.mjs`, `hf.mjs` and `supervisor.mjs` have no Harness imports and run under plain `node --test`; `index.mjs` wires them into the Harness |
+| `src/` | Plugin code. `config.mjs`, `manifest.mjs`, `route.mjs`, `hf.mjs`, `supervisor.mjs`, `gate.mjs`, `rules.mjs`, `progress.mjs` and `messages.mjs` have no Harness imports and run under plain `node --test`; `index.mjs`, `chat.mjs`, `control.mjs` and `web.mjs` wire them into the Harness |
+| `client/index.js` | Client half: a classic script, no build step, React from the Harness window |
 | `cordis.patch.yml` | The bundle's default row: no Space, so nothing is registered |
 | `test/*.test.mjs` | Tests (`node:test`). `runtime.test.mjs` needs an installed Harness and is skipped otherwise |
 | `test/runtime-loader.mjs` | Mounts the plugin on the installed Harness for the runtime tests |

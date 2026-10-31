@@ -5,8 +5,10 @@ started on demand, stopped when idle, with live progress, cost and balance shown
 Harness interface.
 
 > **Status: pre-alpha, Phase 1 in progress.** The plugin already puts configured Spaces in the
-> model selector and can start and pause them, but nothing in the chat starts them yet. Do not install it. The design is in [docs/design.md](docs/design.md); progress is tracked in
-> [CHANGELOG.md](CHANGELOG.md).
+> model selector, starts a stopped Space when a message is sent to it, and resumes the session
+> when it is ready, with precise start progress. A /space command, the stop rules (idle, time
+> limit) and the interface (header indicator, toasts) are in place. Do not install it. The design is in
+> [docs/design.md](docs/design.md); progress is tracked in [CHANGELOG.md](CHANGELOG.md).
 
 ## Contents
 
@@ -66,6 +68,24 @@ the start progress becomes more detailed (copy percentage, load, warm-up).
 - **DeepSeek Harness Desktop:** the 0.2.x line. The first target is 0.2.1-rc.3.
 - **A Hugging Face account** with a **GPU Space** that serves an OpenAI-compatible API.
 - **A Hugging Face access token**, stored in the Harness credential vault (see below).
+- **Recommended: the Hugging Face PRO plan (US$ 9/month), plus credits or a card for the GPU.**
+  Read on the official pages on 2026-10-31:
+  - **Docker or Gradio Spaces on GPU** "require a paid plan"
+    ([spaces-gpus](https://huggingface.co/docs/hub/spaces-gpus)), and PRO lists "the ability to
+    create Gradio and Docker Spaces running on compute" ([pro](https://huggingface.co/docs/hub/pro)).
+    Whether a card alone is enough is not stated, so plan on PRO.
+  - **Storage for the model weights:** PRO raises private storage from 100 GB to 1 TB
+    ([pro](https://huggingface.co/docs/hub/pro)). A 27B model and its bucket copy use tens of GB.
+  - **Included monthly compute credits**, usable on upgraded Space hardware, are applied before
+    pay-as-you-go usage ([billing](https://huggingface.co/docs/hub/billing)); the amount is not
+    stated. The pricing page labels the US$ 2 included per month as inference credits, so do not
+    count on PRO alone to pay for GPU time.
+  - **The GPU itself is billed separately from PRO,** per minute while the Space starts or runs
+    (A100 large US$ 2.50/h, L40S US$ 1.80/h on [pricing](https://huggingface.co/pricing)), from
+    credits first and then the card ([billing](https://huggingface.co/docs/hub/billing)). Keep a
+    prepaid balance or automatic recharge, as Hugging Face recommends, so a start is not refused
+    mid-session. The balance is shown only on the billing page while signed in; this plugin can
+    estimate it from what you enter (design, section 2).
 
 ## Credentials
 
@@ -111,7 +131,7 @@ section 4.
 
 | Plugin | DeepSeek Harness | Status |
 |---|---|---|
-| 0.1.0-alpha.2 (unreleased) | 0.2.1-rc.3 | Phase 1, slices 1 and 2: Spaces in the model selector, and a supervisor that starts and pauses them. 62 offline tests and 5 runtime tests on the installed Harness, Windows, 2026-10-31. Not tested against a real Space yet; nothing in the chat starts a Space yet |
+| 0.1.0-alpha.6 (unreleased) | 0.2.1-rc.3 | Phases 1 and 2: Spaces in the model selector, start and pause, start from the chat with resume, /space and the stop rules, precise progress, the effort check, and the interface (header indicator and toasts). Offline and runtime tests on the installed Harness, Windows, 2026-10-31. Not tested against a real Space yet |
 
 Each release will state the Harness versions it was tested on and how it was tested.
 

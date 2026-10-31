@@ -19,7 +19,9 @@ before(async () => {
     if (req.method === 'POST' && req.url === '/api/spaces/your-user/your-llm-space/restart') return json(200, runtime);
     if (req.method === 'POST' && req.url === '/api/spaces/your-user/your-llm-space/pause') return json(200, { ...runtime, stage: 'PAUSED' });
     if (req.method === 'POST' && req.url === '/api/spaces/your-user/your-llm-space/hardware') return json(200, { ...runtime, hardware: { current: null, requested: JSON.parse(body).flavor } });
+    if (req.method === 'POST' && req.url === '/api/spaces/your-user/your-llm-space/variables') return json(200, {});
     if (req.method === 'POST' && req.url === '/api/spaces/your-user/not-mine/pause') return json(403, { error: 'forbidden' });
+    if (req.method === 'POST' && req.url === '/api/spaces/your-user/not-mine/variables') return json(403, { error: 'forbidden' });
     if (req.url === '/v1/models') return json(200, { object: 'list', data: [{ id: 'open-model-q6' }, { id: 'second' }] });
     if (req.url === '/api/spaces/your-user/your-llm-space') {
       return json(200, {
@@ -59,6 +61,15 @@ test('start, pause and hardware are POSTs with the control credential', async ()
   assert.equal((await hf.requestHardware('your-user/your-llm-space', 'l40sx1')).requested, 'l40sx1');
   assert.deepEqual(JSON.parse(seen.at(-1).body), { flavor: 'l40sx1' });
   await assert.rejects(hf.pause('your-user/not-mine'), /HTTP 403 \(the control credential cannot change this Space; it needs write access and the Space owner\)/);
+});
+
+test('a start variable is a POST of {key, value} with the control credential', async () => {
+  const hf = byKind();
+  await hf.setVariable('your-user/your-llm-space', 'SPACE_SESSION', '{"id":"x"}');
+  const request = seen.at(-1);
+  assert.deepEqual([request.method, request.url, request.auth], ['POST', '/api/spaces/your-user/your-llm-space/variables', 'Bearer control-token']);
+  assert.deepEqual(JSON.parse(request.body), { key: 'SPACE_SESSION', value: '{"id":"x"}' });
+  await assert.rejects(hf.setVariable('your-user/not-mine', 'SPACE_SESSION', 'x'), /setting variable SPACE_SESSION of Space your-user\/not-mine failed: HTTP 403/);
 });
 
 test('served models: read from the Space address only, with the inference credential', async () => {

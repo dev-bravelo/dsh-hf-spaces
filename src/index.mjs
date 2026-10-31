@@ -3,8 +3,15 @@
  * - slice 1 puts each configured Hugging Face Space in the Harness model selector, with the open
  *   model name and only the effort levels configured for it. Values come from the configuration,
  *   the Space manifest and the Hugging Face API, in that order (docs/design.md, section 6);
- * - slice 2 gives each registered Space a supervisor that can start and pause it. Here it only
- *   reads and logs the Space state; starting from the chat comes in slice 3.
+ * - slice 2 gives each registered Space a supervisor that can start and pause it;
+ * - slice 3 starts a stopped Space when a conversation request reaches its route, shows a
+ *   progress job, and resumes the waiting sessions when it is ready (src/chat.mjs);
+ * - slice 4 adds the /space command and the stop rules: idle, time limit with warning and
+ *   extension, and cost as Hugging Face bills it (src/control.mjs);
+ * - slice 5 shows precise start progress from the Space run log and checks each effort level
+ *   with one request, which also warms the model (src/progress.mjs, src/chat.mjs);
+ * - slice 6 serves the interface: local routes guarded by the Harness (src/web.mjs) for the
+ *   header indicator and the toasts of the Client half (client/index.js).
  */
 import Schema from '@deepseek-ai/schemastery';
 import * as piAiModule from '@deepseek-ai/dsh-llm-pi-ai';
@@ -12,6 +19,10 @@ import { credentialRef } from '@deepseek-ai/dsh-credentials';
 import { HARNESS_LEVELS, normalizeConfig } from './config.mjs';
 import { HF_API, createHfClient } from './hf.mjs';
 import { MANIFEST_FILE, effectiveSpace, parseManifest } from './manifest.mjs';
+import { attachChat } from './chat.mjs';
+import { attachControl } from './control.mjs';
+import { attachWeb } from './web.mjs';
+import { textsFor } from './messages.mjs';
 import { buildProviders, describeSpace } from './route.mjs';
 import { createSupervisor, describeState } from './supervisor.mjs';
 
@@ -32,10 +43,12 @@ const Model = Schema.object({
 export const Config = Schema.object({
   credentials: Schema.object({
     inference: Schema.string().default('HF_TOKEN').description('Vault credential NAME that reads the Space: model requests, Space API and manifest. Never a token value.'),
-    control: Schema.string().default('HF_TOKEN').description('Vault credential NAME with write access to the Space, to start and stop it (later slice).'),
+    control: Schema.string().default('HF_TOKEN').description('Vault credential NAME with write access to the Space, to start and stop it.'),
     billing: Schema.string().default('HF_TOKEN').description('Vault credential NAME that reads billing, for cost and balance (later slice).'),
   }).default({}),
+  locale: Schema.string().default('en').description('Language of the plugin messages in the chat: en or pt-BR.'),
   hfApiURL: Schema.string().default(HF_API).description('Hugging Face address. Change it only for offline tests on this machine.'),
+  pollSeconds: Schema.number().default(5).description('Seconds between state reads while a Space starts or stops: 1 to 60.'),
   spaces: Schema.array(Schema.object({
     id: Schema.string().description('Space id, owner/name. The only required field.'),
     label: Schema.string().description('Provider name in the model selector. Defaults to the Space name.'),
@@ -43,11 +56,19 @@ export const Config = Schema.object({
     baseURL: Schema.string().description('OpenAI-compatible address of the Space, https://<subdomain>.hf.space/v1. Unset: read from Hugging Face.'),
     hardware: Schema.string().description('Hardware to start on, such as a100-large. Unset: the hardware the Space already has.'),
     start: Schema.object({
+      automatic: Schema.boolean().description('Start the Space when a message is sent to it while it is off. Default true.'),
+      variables: Schema.dict(Schema.any()).description('Space variables written before each start, for a Space with a start handshake. Placeholders: {{uuid}}, {{now}}, {{readyDeadline}} (Unix seconds).'),
       readyTimeoutMinutes: Schema.number().description('Give up and pause the Space if it is not ready after this many minutes: 1 to 120, default 15.'),
     }),
     defaultEffort: Schema.string().description('Effort the selector starts on. Unset: medium when every model lists it.'),
     models: Schema.array(Model).description(`Models served. Unset: read from ${MANIFEST_FILE} in the Space repository.`),
     progress: Schema.object({ eventPrefix: Schema.string().description('Prefix of the progress lines in the Space run log.') }),
+    stop: Schema.object({
+      idleMinutes: Schema.number().description('Pause after this many minutes without model requests; 0 turns it off. Default 30.'),
+      sessionMinutes: Schema.number().description('Time limit of each start made by the plugin, counted from the start; 0 means none. Default 60.'),
+      warnMinutes: Schema.number().description('Warning before the time limit. Default 5.'),
+      extendMinutes: Schema.number().description('What /space + adds to the time limit. Default 60.'),
+    }).description('Stop rules. They run in the plugin, so they apply only while the Harness is open.'),
   })).default([]).description('Spaces offered in the model selector. Empty: the plugin registers nothing.'),
 });
 
@@ -153,10 +174,20 @@ export function apply(ctx, config) {
     }
   };
 
-  /** route -> { key, supervisor } for every registered Space. */
+  /** route -> entry ({ key, label, facts, supervisor, chat state }) for every registered Space. */
   const supervisors = new Map();
+  const chat = hf
+    ? attachChat({ ctx, entries: supervisors, hf, texts: textsFor(settings.locale), token, credentialNames: settings.credentials, log, pollMs: settings.pollSeconds * 1000 })
+    : undefined;
+  const control = chat
+    ? attachControl({ ctx, entries: supervisors, chat, hf, texts: textsFor(settings.locale), locale: settings.locale, pollMs: settings.pollSeconds * 1000, log })
+    : undefined;
+  if (control) attachWeb({ ctx, control, locale: settings.locale, log });
   const unsupervise = (route) => {
-    supervisors.get(route)?.supervisor.dispose(); // stops watching; the Space is left as it is
+    const entry = supervisors.get(route);
+    if (!entry) return;
+    entry.supervisor.dispose(); // stops watching; the Space is left as it is
+    chat?.release(entry);
     supervisors.delete(route);
   };
   const supervise = (space) => {
@@ -165,15 +196,33 @@ export function apply(ctx, config) {
       id: space.id,
       baseURL: space.baseURL.value,
       modelIds: space.models.value.map(m => m.id),
+      models: space.models.value.map(m => ({ id: m.id, ...(m.reasoning ? { reasoning: m.reasoning } : {}) })),
+      eventPrefix: space.eventPrefix.value,
       ...(space.hardware ? { hardware: space.hardware } : {}),
       readyTimeoutMinutes: space.readyTimeoutMinutes,
+      automatic: space.automatic,
+      stop: space.stop,
+      ...(space.startVariables ? { startVariables: space.startVariables } : {}),
     };
     const key = JSON.stringify(facts);
-    if (supervisors.get(space.route)?.key === key) return;
-    unsupervise(space.route);
-    const supervisor = createSupervisor({ space: facts, client: hf, onChange: state => log?.info?.(`${space.id}: ${describeState(state)}`) });
-    supervisors.set(space.route, { key, supervisor });
-    supervisor.check().catch(error => log?.warn?.(`${space.id}: state not read: ${error?.message ?? error}`));
+    const previous = supervisors.get(space.route);
+    if (previous?.key === key) return;
+    const entry = { key, route: space.route, label: space.label, facts, sha: space.sha, sleepSeconds: space.idleSeconds?.value, readyUntil: 0, waiters: new Map(), progress: new Map() };
+    entry.supervisor = createSupervisor({
+      space: facts,
+      client: hf,
+      pollMs: settings.pollSeconds * 1000,
+      onChange: (state) => {
+        log?.info?.(`${space.id}: ${describeState(state)}`);
+        chat?.onState(entry);
+      },
+    });
+    if (previous) {
+      previous.supervisor.dispose(); // stops watching; the Space is left as it is
+      chat?.transfer(previous, entry); // a start in progress goes on under the new entry
+    }
+    supervisors.set(space.route, entry);
+    entry.supervisor.check().catch(error => log?.warn?.(`${space.id}: state not read: ${error?.message ?? error}`));
   };
 
   let generation = 0;
@@ -211,6 +260,8 @@ export function apply(ctx, config) {
     disposed = true;
     clearTimeout(timer);
     for (const route of [...supervisors.keys()]) unsupervise(route);
+    control?.dispose();
+    chat?.dispose();
   });
   schedule();
   // When the credential service starts after this plugin, read Hugging Face again with it.

@@ -32,11 +32,19 @@ export const asPlugin = mod => mod.default ?? mod;
  * temporary file, so credentials come only from the test's environment variables (source "env"),
  * as they would in the Desktop with nothing stored.
  */
-export async function environment() {
+export async function environment({ agents = false } = {}) {
   const { Context } = runtimePackage('@deepseek-ai/cordis');
   const ctx = new Context();
   const store = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-hf-spaces-test-'));
-  await ctx.plugin(asPlugin(runtimePackage('@deepseek-ai/dsh-llm')));
+  // With `agents`: the real agent loop and the jobs registry, as on the Desktop, but no persistence.
+  const stack = agents
+    ? [['dsh-session'], ['dsh-session-projection'], ['dsh-agent'], ['dsh-llm'],
+      ['dsh-system-prompt', { includeHarnessIdentity: false, includeRuntimeContext: false }],
+      ['dsh-tools', { mode: 'native' }], ['dsh-agent-loop', { agents: [], maxParallelToolCalls: 1 }],
+      ['dsh-jobs-local'], ['dsh-tool-jobs'], ['dsh-commands']]
+    : [['dsh-llm']];
+  for (const [name, config] of stack) await ctx.plugin(asPlugin(runtimePackage(`@deepseek-ai/${name}`)), config);
+  if (ctx.get('sessionPersistence') !== undefined) throw new Error('Tests must never use a persistence backend');
   await ctx.plugin(asPlugin(runtimePackage('@deepseek-ai/dsh-credentials-local')), { path: path.join(store, '.credentials.yaml') });
   return {
     ctx,

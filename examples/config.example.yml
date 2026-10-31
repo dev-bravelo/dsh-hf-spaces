@@ -1,4 +1,4 @@
-# dsh-hf-spaces: example configuration (DESIGN STAGE, the plugin does not exist yet).
+# dsh-hf-spaces: example configuration (the `hf-spaces` entry of the Harness profile's cordis.patch.yml).
 # Every value below is fake. Replace `your-user/your-llm-space` and the model id with yours.
 # Never put a token here: `credentials` holds credential NAMES from the Harness vault.
 
@@ -7,8 +7,7 @@ credentials:
   control: HF_TOKEN     # required to start/stop: write access to the Space
   billing: HF_TOKEN     # optional: read access to billing (cost and balance estimate)
 
-alerts:
-  lowBalanceUsd: 5      # warn when the estimated Hugging Face balance drops below this (0 = off)
+locale: en              # language of the plugin's messages in the chat: en or pt-BR
 
 spaces:
   - id: your-user/your-llm-space      # the only required field of a Space
@@ -33,8 +32,13 @@ spaces:
     start:
       automatic: true                  # start the Space when a message is sent to a stopped Space
       readyTimeoutMinutes: 15          # give up (and stop the Space) after this
+      # variables: only for a Space whose boot reads a variable written just before each start
+      # (docs/design.md, section 4). Space variables are NOT secret: never put a token here.
+      # Placeholders: {{uuid}} new id per start, {{now}} Unix seconds, {{readyDeadline}} now + readyTimeoutMinutes.
+      # variables:
+      #   SPACE_SESSION: { id: "{{uuid}}", startup_deadline: "{{readyDeadline}}" }
     stop:
       idleMinutes: 30                  # stop after this long without model requests (0 = never)
       sessionMinutes: 60               # time limit of each start (0 = none)
       warnMinutes: 5                   # warning before the time limit
-      extendMinutes: 60                # what one "extend" adds
+      extendMinutes: 60                # what /space + adds

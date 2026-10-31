@@ -6,6 +6,103 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added (Phase 2, slice 6: the interface, 0.1.0-alpha.6)
+
+- **Start variables** (`start.variables`, or `startVariables` in the manifest): Space variables
+  the plugin writes before each start it makes, declared as data with the placeholders
+  `{{uuid}}`, `{{now}}` and `{{readyDeadline}}` (Unix seconds). For Spaces with a start
+  handshake: the private prototype's Space pauses itself at boot unless a fresh session variable
+  with a start deadline was written first. No Space-specific code. Space variables are not
+  secret, so a value holding a token is refused; only the three placeholders are replaced.
+- **Client half** (`client/index.js`): a classic script with no build step, loaded by the Harness
+  with React from its own window, in the same format as the official open-in-app client.
+  - **Header indicator** (`conversation.session.header.utilities`), only in sessions whose model
+    belongs to a configured Space: state, progress with percent and time left, time on and cost,
+    stop time, and Start, Stop and +N buttons.
+  - **Toasts** (`shell.overlay`): time limit soon (with +N and Stop), a failed start, refused
+    effort levels. Each can be closed. Colors come from the Harness theme tokens only.
+  - One shared poll of the plugin's state: every 2 s while a Space starts or stops, else every
+    15 s, and only while something is on screen.
+- **Local routes** (`src/web.mjs`): `GET /dsh-hf-spaces/state` and
+  `POST /dsh-hf-spaces/action`, each request checked first with the Harness guard
+  (`connection.requestRejection`), small bodies only, actions limited to on, off and extend.
+- **Tests:** the routes with a fake web server (guard, methods, actions), and the client script
+  run as the Harness loads it, with a minimal React stand-in (header text, toasts, what a button
+  sends). The look is checked by hand on the Desktop.
+- **Code review of the slice:** 7 findings; 6 fixed. A button's answer (a refusal, an unconfirmed
+  pause) now shows as a toast; one poll at a time however often components remount; the state
+  of a Space changed elsewhere is read again at most once a minute. Not yet verified: how the
+  session's model is read for the indicator (the path used by the official agent-team client),
+  checked by hand on the Desktop.
+
+### Added (Phase 1, slice 5: precise progress and the effort check, 0.1.0-alpha.5)
+
+- **Start progress** (`src/progress.mjs`): phase, percent and time left in the start task, from
+  the Space stage, the `progress.eventPrefix` lines of its run log (the copy uses the measured
+  bytes and rate) and the warm-up. Estimates generalized from the prototype's real starts.
+- **Run log** read from Node while the Space starts (`followRunLog`), opened only once it left
+  the paused stage, because a paused Space answers that request with nothing at all.
+- **Effort check and warm-up** (design, section 6, step 6): when the server lists the models,
+  one minimal request per configured effort level, which also warms the model. A level the
+  server refuses (HTTP 400, 422 or 500) is reported in the log and in `/space status`, with the
+  fix. Requests that arrive meanwhile wait with the others instead of queueing behind it.
+- **Tests:** progress estimate and event lines; a runtime test with run-log events, the effort
+  check and a refused level. Testing found that the log was opened while the Space was still
+  paused, which hid the copy; fixed.
+
+### Added (Phase 1, slice 4: /space and the stop rules, 0.1.0-alpha.4)
+
+- **`/space [status | on | off | +N] [route]`** (`src/control.mjs`): never sends anything to a
+  model. The route is needed only when several Spaces are configured; the plugin never guesses.
+  - `status`: state, hardware, time on, estimated cost, when it stops.
+  - `on`: starts the Space with a progress job in the session, without resuming it (a resume
+    would open a model turn); a manual start ignores the failure cooldown.
+  - `off`: pauses and reports the estimated cost, or the warning when the pause is unconfirmed.
+  - `+N`: extends the time limit of a start made by the plugin.
+- **Stop rules** (`src/rules.mjs`), per Space in `stop`: `idleMinutes` 30 (idleness counts from
+  the end of the last answer), `sessionMinutes` 60 counted from the start, `warnMinutes` 5,
+  `extendMinutes` 60. At the time limit a recent request may finish for up to 10 minutes. A Space
+  started elsewhere gets the idle rule only.
+- **Start line** states the stop rules with their real conditions: they apply only while the
+  Harness is open, and when it is closed only the Space's own sleep time stops it.
+- **Cost** as Hugging Face bills it: every started minute, at the public price of the hardware.
+- **Tests:** stop rules and command syntax; runtime tests of `/space` (no model request at all),
+  of the idle pause, of the time limit, and of `/space off` on a Space started elsewhere.
+- **Code review of the slice:** 8 findings; 7 fixed. `/space off` and `/space status` now read
+  the Space instead of trusting the last known state, which could leave a Space started on the
+  website billing. The warning before the time limit shows only in `/space status` until the
+  interface slice. Testing also found that a start counted as use and delayed the time limit.
+- **README:** the Hugging Face PRO plan is recommended (Docker Spaces on GPU need a paid plan,
+  1 TB of private storage, included compute credits), with a prepaid balance or automatic
+  recharge for the GPU itself, which is billed apart from PRO. Read on the official pages on
+  2026-10-31.
+
+### Added (Phase 1, slice 3: start from the chat, 0.1.0-alpha.3)
+
+- **Chat gate** (`src/chat.mjs`, pure parts in `src/gate.mjs`): a conversation request to a
+  Space that does not serve starts it and is answered with one line written as the plugin. That
+  line says where progress shows ("background job" at the top of the conversation).
+  - **Resume:** when the Space is ready, each waiting session gets one plugin notice that quotes
+    the user's waiting message, and the model answers it.
+  - **Progress job** in each waiting session's header, with the Space stage and elapsed time. Its
+    stop control pauses the Space; a user stop is not a failure (no cooldown, no chat turn).
+  - **Failure:** no chat turn is opened; the reason shows in the start task, and the next message
+    explains the 10-minute wait before another automatic start.
+  - **Never starts** for other requests (session titles), without the inference or the control
+    credential (the notice names the missing one and how to add it), or when `start.automatic` is
+    false (the notice gives the start command).
+  - **A failed probe is not proof the Space is off:** the gate reads the Space stage first. A
+    running or starting Space is joined with an "is starting" notice, never restarted.
+  - **Configuration change during a start:** the new entry takes over the waiting sessions and
+    their progress jobs, so they still resume.
+- **Code review of the slice:** 10 findings; 9 fixed, 1 left for slice 4 (the start line will state
+  the stop rules once those rules exist).
+- **Messages** in English or Brazilian Portuguese (`locale`).
+- **Settings:** `locale`, `pollSeconds`, and `start.automatic` per Space.
+- **Tests:** gate and messages tests, plus runtime tests with the real agent loop and jobs
+  registry: start and resume quoting the user, a Space already serving, a failed start, and the
+  stop control.
+
 ### Added (Phase 1, slice 2: start and pause a Space, 0.1.0-alpha.2)
 
 - **Space supervisor** (`src/supervisor.mjs`, no Harness imports): states off, starting, ready,

@@ -224,7 +224,8 @@ do not fit: Space state does not come from the session log.
   role and whether the needed permissions are present. Never polled.
 - **Weight volumes:** a bucket mounted read-only is visible in `runtime.volumes` from
   `GET /api/spaces/{id}`, which lets the interface say where the weights come from.
-- **Header indicator:** on `conversation.session.header.actions`, not on `.corner`, which is a
+- **Header indicator:** on `conversation.session.header.utilities` (the official open-in-app
+  plugin registers there too), not on `.corner`, which is a
   single slot that the right sidebar already uses.
 - **Toasts:** drawn by the plugin in `shell.overlay`, because there is no toast API.
 - **Settings:** the Harness shows no page for `Config`. The plugin registers a page on
