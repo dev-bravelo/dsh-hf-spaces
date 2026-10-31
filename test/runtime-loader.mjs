@@ -36,6 +36,9 @@ export async function environment({ agents = false } = {}) {
   const { Context } = runtimePackage('@deepseek-ai/cordis');
   const ctx = new Context();
   const store = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-hf-spaces-test-'));
+  // The plugin's records go under the Harness home: a temporary one, never the user's.
+  const home = process.env.DSH_HOME;
+  process.env.DSH_HOME = store;
   // With `agents`: the real agent loop and the jobs registry, as on the Desktop, but no persistence.
   const stack = agents
     ? [['dsh-session'], ['dsh-session-projection'], ['dsh-agent'], ['dsh-llm'],
@@ -48,8 +51,11 @@ export async function environment({ agents = false } = {}) {
   await ctx.plugin(asPlugin(runtimePackage('@deepseek-ai/dsh-credentials-local')), { path: path.join(store, '.credentials.yaml') });
   return {
     ctx,
+    store,
     dispose: () => {
       ctx.fiber.dispose();
+      if (home === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = home;
       fs.rmSync(store, { recursive: true, force: true });
     },
   };

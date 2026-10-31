@@ -160,7 +160,9 @@ export function createSupervisor({ space, client, onChange, now = Date.now, slee
       startedHere = true;
       signal.throwIfAborted();
     }
-    set('starting', { stage: runtime.stage, startedAt });
+    // `requested`: the hardware billed while it starts, for the cost of a start that fails.
+    const requested = runtime.requested ?? space.hardware;
+    set('starting', { stage: runtime.stage, startedAt, ...(requested ? { requested } : {}) });
     const deadline = startedAt + space.readyTimeoutMinutes * 60000;
     for (;;) {
       await sleep(pollMs, signal);
@@ -178,7 +180,7 @@ export function createSupervisor({ space, client, onChange, now = Date.now, slee
         if (check.fatal) return failStart(check.fatal, signal, startedHere);
       }
       if (runtime && current.phase === 'starting' && runtime.stage !== current.stage) {
-        set('starting', { stage: runtime.stage, startedAt });
+        set('starting', { stage: runtime.stage, startedAt, ...(requested ? { requested } : {}) });
       }
       if (now() >= deadline) {
         return failStart(`not ready after ${space.readyTimeoutMinutes} min; see the Space run log on Hugging Face, or raise start.readyTimeoutMinutes if it is only slow`, signal, startedHere);

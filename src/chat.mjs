@@ -3,32 +3,35 @@
  * Space's route:
  * - when the Space serves, the request goes on;
  * - when it is off, the plugin starts it, answers that turn with one fixed line written as the
- *   plugin, shows a progress job in the session header, and resumes the session when the Space
- *   is ready, quoting the user's waiting message.
+ *   plugin, and resumes the session when the Space is ready, quoting the user's waiting message.
+ * Progress, failures and controls show in the interface (header indicator and sidebar tab), never
+ * in a background job or a chat turn (design, section 8).
  * Other requests (such as session titles) never start a Space.
  *
  * Proven by the private prototype in a real start on 2026-10-30: the resumed turn answered the
- * user, and holding a wait on the progress job kept dsh-tool-jobs from sending a "job finished"
- * notice that would open a model turn.
+ * user instead of the plugin's notice.
  */
 import { createUserMessage, isAgentLoopRequest } from '@deepseek-ai/dsh-llm';
 import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog';
-import { NOTICE_SOURCE, READY_TTL_MS, USER_KILL_REASON, fixedReply, formatDuration, inCooldown, pendingUserText, planRequest } from './gate.mjs';
+import { NOTICE_SOURCE, READY_TTL_MS, fixedReply, inCooldown, pendingUserText, planRequest } from './gate.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { estimate, parseEventLine, roughDuration } from './progress.mjs';
 import { deadlineOf } from './rules.mjs';
 import { stageKind } from './supervisor.mjs';
 
-const PROGRESS_MS = 3000;
-const JOB_KIND = 'hf-space';
 /** The whole warm-up and effort check may take this long; the sessions resume after it anyway. */
 const WARMUP_MAX_MS = 3 * 60000;
 const REFUSALS = [400, 422, 500];
+/** Entry fields a configuration change carries over to the new entry. */
+const CARRIED = ['tracked', 'readyUntil', 'lastStop', 'lastFailure', 'lastFailureAt', 'refusedEfforts', 'effortsChecked', 'record', 'logTail', 'logTailAt', 'servedAt'];
+/** Run-log lines kept from the last start, for the sidebar tab. */
+const LOG_TAIL_LINES = 12;
+const LOG_LINE_MAX = 240;
 
 /**
  * @param options.entries - Map route -> entry, kept by index.mjs; an entry is
  *   { route, label, facts, supervisor, readyUntil, waiters: Map<agent, { text, sessionId }>,
- *     progress: Map<sessionId, job>, sleepSeconds?, lastFailureAt?, starting?, startedAt?,
+ *     sleepSeconds?, lastFailureAt?, starting?, startedAt?, logTail?: string[],
  *     tracked?: { readyAt?, lastActivity?, startedAt?, deadline?, warned? }, inFlight? }
  *   The tracked part exists while this Harness knows the Space serves; it feeds the stop rules.
  * @param options.token - async (kind) => token or undefined
@@ -63,10 +66,11 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
     }
   };
 
-  // ---- Progress: one background job per waiting session, in that session's header. The estimate
-  // follows the Space stage, the event lines of its run log and the warm-up (progress.mjs).
+  // ---- Progress, read by the interface: the estimate follows the Space stage, the event lines of
+  // its run log and the warm-up (progress.mjs).
   const live = entry => (entry.live ??= {});
-  const progressLine = (entry) => {
+  /** { text, phase, percent, left } of a start in progress: one line, and its parts for the interface. */
+  const progressInfo = (entry) => {
     const l = entry.live ?? {};
     const at = now();
     const since = from => (from === undefined ? 0 : (at - from) / 1000);
@@ -75,8 +79,11 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
       { event: l.event, loading: loadFrom !== undefined, warming: l.warmAt !== undefined },
       { elapsed: since(entry.startedAt), sinceEvent: since(l.eventAt), sinceLoad: since(loadFrom), sinceWarm: since(l.warmAt) },
     );
-    return texts.progressLine(texts.phases[progress.phase], progress.percent, roughDuration(progress.secondsLeft));
+    const phase = texts.phases[progress.phase];
+    const left = roughDuration(progress.secondsLeft);
+    return { text: texts.progressLine(phase, progress.percent, left), phase, percent: progress.percent, left };
   };
+  const progressLine = entry => progressInfo(entry).text;
 
   /** Follows the Space run log while it starts, for the copy and load events (design, section 7). */
   const watchLog = async (entry) => {
@@ -95,15 +102,24 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
         await hf.followRunLog(entry.facts.id, {
           signal: controller.signal,
           onLine: (line, timestamp) => {
+            // A reconnection replays recent lines: keep each line once.
+            const loggedAt = Date.parse(timestamp);
+            const at = Number.isFinite(loggedAt) ? Math.min(loggedAt, now()) : now();
+            const text = line.slice(0, LOG_LINE_MAX);
+            const tail = (entry.logTail ??= []);
+            const replayed = at < (entry.logTailAt ?? 0) || (at === entry.logTailAt && tail.includes(text));
+            if (!replayed) {
+              tail.push(text);
+              if (tail.length > LOG_TAIL_LINES) tail.shift();
+              entry.logTailAt = at;
+            }
             const event = parseEventLine(line, prefix);
             if (!event) return;
             const l = live(entry);
-            // A reconnection replays recent lines: date each event by its log time, not by now.
-            const loggedAt = Date.parse(timestamp);
+            // Date each event by its log time, not by now.
             l.event = event;
-            l.eventAt = Number.isFinite(loggedAt) ? Math.min(loggedAt, now()) : now();
+            l.eventAt = at;
             if (event.stage === 'loading') l.loadAt ??= now();
-            refreshProgress(entry);
           },
         });
       } catch { /* not up yet (no headers while paused), or a passing network error */ }
@@ -119,7 +135,6 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
    */
   const warmUp = async (entry) => {
     live(entry).warmAt = now();
-    refreshProgress(entry);
     // Checked again when the models or the Space revision change.
     const key = JSON.stringify([entry.sha, entry.facts.models]);
     const checked = entry.effortsChecked === key;
@@ -156,59 +171,6 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
       clearTimeout(timer);
     }
   };
-  const refreshProgress = (entry) => {
-    const line = progressLine(entry);
-    for (const job of entry.progress.values()) {
-      try { job.handle?.updateProgress(line); } catch { /* settled meanwhile */ }
-    }
-  };
-  const trackProgress = (entry, sessionId) => {
-    const jobs = ctx.get('jobs');
-    if (!jobs || !sessionId || !entry.starting || entry.progress.has(sessionId)) return;
-    const job = {};
-    const done = new Promise(resolve => { job.finish = resolve; });
-    try {
-      job.id = jobs.start({
-        kind: JOB_KIND,
-        label: texts.progressLabel(entry.label),
-        owner: sessionId,
-        run: (handle) => {
-          job.handle = handle;
-          handle.updateProgress(progressLine(entry));
-          return {
-            done,
-            cancel: (reason) => {
-              const current = entries.get(entry.route) ?? entry; // the entry may have been replaced
-              if (reason === USER_KILL_REASON) {
-                current.stoppedByUser = current.supervisor.stop('stopped from the start task');
-                return;
-              }
-              // The session closed: only its progress and its wake end; the start goes on for the others.
-              current.progress.delete(sessionId);
-              for (const [agent, waiter] of current.waiters) if (waiter.sessionId === sessionId) current.waiters.delete(agent);
-              job.finish({ status: 'killed', detail: texts.sessionClosed });
-            },
-          };
-        },
-      });
-    } catch (error) {
-      log?.warn?.(`start progress unavailable in session ${sessionId}: ${error?.message ?? error}`);
-      return;
-    }
-    entry.progress.set(sessionId, job);
-    // Holding this wait makes the settlement count as collected, so no "job finished" notice is sent.
-    jobs.wait(job.id, 6 * 3600000, sessionId).catch(() => {});
-  };
-  const stopTimer = (entry) => {
-    clearInterval(entry.progressTimer);
-    entry.progressTimer = undefined;
-  };
-  const finishProgress = (entry, status, detail) => {
-    for (const job of entry.progress.values()) job.finish({ status, detail });
-    entry.progress.clear();
-    stopTimer(entry);
-  };
-
   /** The Space serves: trust it for a while, and track it for the idle rule if not yet tracked. */
   const markServing = (entry) => {
     entry.readyUntil = now() + READY_TTL_MS;
@@ -223,10 +185,9 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
     entry.logWatch?.abort();
     // The user chose to stop: not a failure, so no cooldown and no notice into the sessions.
     const endUserStop = async () => {
-      const stopped = await entry.stoppedByUser;
+      await entry.stoppedByUser;
       entry.stoppedByUser = undefined;
       entry.tracked = undefined;
-      finishProgress(entry, 'killed', stopped.phase === 'off' ? texts.stoppedDetail : texts.stopUnconfirmed(stopped.reason ?? stopped.phase));
       entry.waiters.clear();
     };
     try {
@@ -246,17 +207,19 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
         } else {
           const elapsed = (now() - entry.startedAt) / 1000;
           markServing(entry);
-          finishProgress(entry, 'completed', texts.readyDetail(entry.label, formatDuration(elapsed)));
-          deliver([...entry.waiters.keys()], agent => texts.ready(entry.label, Math.round(elapsed), entry.waiters.get(agent)?.text));
+          // A session closed while it waited is not woken.
+          const agents = ctx.get('agents');
+          const open = [...entry.waiters].filter(([agent, waiter]) => typeof agents?.get !== 'function' || agents.get(waiter.sessionId) === agent).map(([agent]) => agent);
+          deliver(open, agent => texts.ready(entry.label, Math.round(elapsed), entry.waiters.get(agent)?.text));
           entry.waiters.clear();
         }
       } else {
-        // No chat turn is opened for a failure (design, section 8): the reason shows in the start
-        // task, and the next message to this Space gets the cooldown notice.
+        // No chat turn is opened for a failure (design, section 8): the reason shows in the
+        // interface, and the next message to this Space gets the cooldown notice.
         entry.lastFailureAt = now();
         entry.tracked = undefined;
         entry.lastFailure = texts.failed(entry.label, state.reason ?? state.phase, state.paused);
-        finishProgress(entry, 'failed', entry.lastFailure);
+        log?.warn?.(`${entry.facts.id}: ${entry.lastFailure}`);
         entry.waiters.clear();
       }
     } finally {
@@ -277,10 +240,10 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
     // (idleness counts from readyAt until the first request).
     if (startedHere) entry.tracked = { startedAt: entry.startedAt, deadline: deadlineOf(entry.startedAt, entry.facts.stop) };
     entry.stoppedByUser = undefined;
-    stopTimer(entry);
-    entry.progressTimer = setInterval(() => refreshProgress(entry), PROGRESS_MS);
-    entry.progressTimer.unref?.();
+    entry.lastFailure = undefined; // a new start: the last failure no longer applies
     entry.live = {};
+    entry.logTail = [];
+    entry.logTailAt = undefined;
     entry.starting = entry.supervisor.start().then(state => settle(entry, state));
     void watchLog(entry);
     return entry.starting;
@@ -290,7 +253,6 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
   const addWaiter = (entry, agent, request) => {
     if (!agent) return;
     entry.waiters.set(agent, { text: pendingUserText(request.messages), sessionId: request.sessionId });
-    trackProgress(entry, request.sessionId);
   };
   const join = (entry, agent, request) => {
     addWaiter(entry, agent, request);
@@ -365,16 +327,15 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
   });
 
   return {
-    /** The progress line of a start in progress, for the interface. */
-    progressOf: entry => progressLine(entry),
+    /** The progress of a start in progress, for the interface: { text, phase, percent, left }. */
+    progressOf: entry => progressInfo(entry),
     /**
-     * /space on: starts the Space without a model request; the session gets the progress job but
-     * is not resumed (a resume would open a model turn). Returns a text, or undefined when a start
-     * began (the caller writes that text, with the hourly price).
+     * /space on and the Start button: starts the Space without a model request; no session is
+     * resumed (a resume would open a model turn). Returns a text, or undefined when a start began
+     * (the caller writes that text, with the hourly price).
      */
-    async startFromCommand(entry, sessionId) {
+    async startFromCommand(entry) {
       if (entry.starting) {
-        trackProgress(entry, sessionId);
         return texts.stillStarting(entry.label, Math.round((now() - entry.startedAt) / 1000), progressLine(entry));
       }
       if (await servesNow(entry)) {
@@ -393,10 +354,9 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
       entry.lastFailureAt = undefined; // a manual start ignores the cooldown
       entry.startedAt = now();
       void startFor(entry, off);
-      trackProgress(entry, sessionId);
       return undefined;
     },
-    /** /space off and the stop rules: cancels a start in progress, pauses, ends the progress jobs. */
+    /** /space off and the stop rules: cancels a start in progress and pauses. */
     async stop(entry, reason) {
       const stopping = entry.supervisor.stop(reason);
       if (entry.starting) entry.stoppedByUser = stopping; // not a failure: no cooldown, no notice
@@ -405,29 +365,31 @@ export function attachChat({ ctx, entries, hf, texts, token, credentialNames, lo
       if (state.phase === 'off') entry.tracked = undefined;
       return state;
     },
-    /** Called on every supervisor state change: progress lines follow the stage at once. */
+    /** Called on every supervisor state change: the progress follows the stage at once. */
     onState(entry) {
       const state = entry.supervisor.state();
       if (entry.starting && state.phase === 'starting' && stageKind(state.stage) === 'running') live(entry).runningAt ??= now();
-      if (entry.progress.size) refreshProgress(entry);
+      // A Space seen serving that this Harness does not track yet (started elsewhere, or before the
+      // Harness opened) gets the idle rule at once, not only after its first request: otherwise it
+      // bills until its own sleep time. A time limit applies only to starts made here.
+      if (!entry.starting && state.phase === 'ready' && !entry.tracked) entry.tracked = { readyAt: now(), lastActivity: now() };
     },
     /**
      * A configuration change replaced an entry. A start in progress goes on: the new entry takes
-     * over its waiting sessions and progress jobs and watches the start (its supervisor joins it).
+     * over its waiting sessions and watches the start (its supervisor joins it).
      */
     transfer(previous, next) {
-      stopTimer(previous);
+      // What this Harness knows about the Space outlives the entry: its stop rules (tracked), the
+      // last stop and failure, the effort check and the records.
+      for (const key of CARRIED) if (previous[key] !== undefined) next[key] = previous[key];
       if (!previous.starting) return;
       next.waiters = previous.waiters;
-      next.progress = previous.progress;
       next.startedAt = previous.startedAt;
       previous.waiters = new Map();
-      previous.progress = new Map();
       void startFor(next);
     },
-    /** Ends the progress jobs of an entry that goes away for good. */
+    /** Forgets the waiting sessions of an entry that goes away for good. */
     release(entry) {
-      finishProgress(entry, 'failed', texts.replaced);
       entry.waiters.clear();
     },
     dispose() {

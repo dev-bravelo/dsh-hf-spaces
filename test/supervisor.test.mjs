@@ -289,9 +289,9 @@ test('start variables: rendered from data and written before the restart (the st
   const written = [];
   client.setVariable = async (id, key, value) => { client.calls.push(`variable ${key}`); written.push([key, value]); };
   const template = { id: '{{uuid}}', startup_deadline: '{{readyDeadline}}', max_deadline: 0 };
-  const { supervisor } = supervised(client, { readyTimeoutMinutes: 20, startVariables: { RVN_SESSION: template } });
+  const { supervisor } = supervised(client, { readyTimeoutMinutes: 20, startVariables: { SPACE_SESSION: template } });
   assert.equal((await supervisor.start()).phase, 'ready');
-  assert.deepEqual(client.calls.slice(0, 3), ['runtime', 'variable RVN_SESSION', 'restart'], 'written before the restart');
+  assert.deepEqual(client.calls.slice(0, 3), ['runtime', 'variable SPACE_SESSION', 'restart'], 'written before the restart');
   const session = JSON.parse(written[0][1]);
   assert.match(session.id, /^[0-9a-f-]{36}$/);
   assert.equal(session.startup_deadline, 20 * 60, 'Unix seconds: the fake clock starts at 0');
@@ -299,7 +299,7 @@ test('start variables: rendered from data and written before the restart (the st
   // Not written when the Space already serves: nothing is started.
   const running = fakeSpace({ stage: 'RUNNING', current: 'a100-large' });
   running.setVariable = async () => { running.calls.push('variable'); };
-  await supervised(running, { startVariables: { RVN_SESSION: template } }).supervisor.start();
+  await supervised(running, { startVariables: { SPACE_SESSION: template } }).supervisor.start();
   assert.ok(!running.calls.includes('variable'));
 });
 

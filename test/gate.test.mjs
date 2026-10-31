@@ -33,7 +33,8 @@ test('texts: the start notice says where to look and that the session resumes; b
     const t = textsFor(locale);
     const starting = t.starting('My LLM', t.where('My LLM'));
     assert.match(starting, /dsh-hf-spaces/);
-    assert.match(starting, /"background job"/);
+    assert.match(starting, /(indicator|indicador)/);
+    assert.doesNotMatch(starting, /background job/, 'progress is in the interface, never in a background job');
     assert.match(t.ready('My LLM', 200, 'oi'), /«oi»\]$/);
     assert.match(t.failed('My LLM', 'x', false), /(may still bill|pode continuar cobrando)/);
   }

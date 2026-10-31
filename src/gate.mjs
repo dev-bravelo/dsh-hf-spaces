@@ -12,8 +12,6 @@ export const FAILURE_COOLDOWN_MS = 10 * 60000;
 /** A Space seen serving is trusted for this long before the next request checks again. */
 export const READY_TTL_MS = 2 * 60000;
 
-/** Reason the jobs UI sends when the user presses a job's stop control (dsh-api-job-controller, 0.2.1-rc.3). */
-export const USER_KILL_REASON = 'cancelled by the user';
 
 /**
  * What to do with a conversation request to a Space.

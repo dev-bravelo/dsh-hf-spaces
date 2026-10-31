@@ -4,12 +4,14 @@
  * request is first checked with the official guard, `connection.requestRejection` (the same
  * pattern as the official open-in-app plugin).
  *
- * - GET  /dsh-hf-spaces/state   -> { locale, spaces: [view] }, no Hugging Face request
+ * - GET  /dsh-hf-spaces/state   -> { locale, spaces: [view], account: { credentials } }, no Hugging Face request waits
+ * - GET  /dsh-hf-spaces/setup   -> { locale, problems, credentials, spaces: [setup view] }, for the setup page
  * - POST /dsh-hf-spaces/action  <- { route, action: 'on' | 'off' | 'extend' } -> { kind, text }
  */
 
 export const STATE_PATH = '/dsh-hf-spaces/state';
 export const ACTION_PATH = '/dsh-hf-spaces/action';
+export const SETUP_PATH = '/dsh-hf-spaces/setup';
 const MAX_BODY_BYTES = 4 * 1024;
 const ACTIONS = { on: 'on', off: 'off', extend: '+' };
 
@@ -31,8 +33,8 @@ async function readJson(req) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
 }
 
-/** Registers the two routes once the web server and the connection guard are available. */
-export function attachWeb({ ctx, control, locale, log }) {
+/** Registers the routes once the web server and the connection guard are available. */
+export function attachWeb({ ctx, control, setup, locale, log }) {
   ctx.inject(['webServer', 'connection'], (sub) => {
     const rejected = (req, res) => {
       const rejection = Reflect.get(sub, 'connection').requestRejection(req);
@@ -47,9 +49,19 @@ export function attachWeb({ ctx, control, locale, log }) {
       handler: async (req, res) => {
         if (rejected(req, res)) return;
         if (req.method !== 'GET') return sendJson(res, 405, { error: 'GET only' });
-        sendJson(res, 200, { locale, spaces: await control.views() });
+        const [spaces, account] = await Promise.all([control.views(), control.accountView()]);
+        sendJson(res, 200, { locale, spaces, account });
       },
     }), `dsh-hf-spaces: GET ${STATE_PATH}`);
+    sub.effect(() => sub.webServer.register({
+      kind: 'exact',
+      path: SETUP_PATH,
+      handler: async (req, res) => {
+        if (rejected(req, res)) return;
+        if (req.method !== 'GET') return sendJson(res, 405, { error: 'GET only' });
+        sendJson(res, 200, { locale, ...(await setup()) });
+      },
+    }), `dsh-hf-spaces: GET ${SETUP_PATH}`);
     sub.effect(() => sub.webServer.register({
       kind: 'exact',
       path: ACTION_PATH,

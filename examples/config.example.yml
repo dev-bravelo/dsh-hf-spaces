@@ -5,9 +5,11 @@
 credentials:
   inference: HF_TOKEN   # required: read access to the Space (to call the model)
   control: HF_TOKEN     # required to start/stop: write access to the Space
-  billing: HF_TOKEN     # optional: read access to billing (cost and balance estimate)
+  billing: HF_TOKEN     # optional: read access to billing (what each Space was billed today and this month)
 
-locale: en              # language of the plugin's messages in the chat: en or pt-BR
+locale: en              # language of the plugin's messages and interface: en or pt-BR
+# stateDir: /path/to/folder   # optional: where the plugin keeps its start records
+#                             # (default: <Harness home>/state/dsh-hf-spaces)
 
 spaces:
   - id: your-user/your-llm-space      # the only required field of a Space

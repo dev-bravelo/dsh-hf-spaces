@@ -1,16 +1,25 @@
 # dsh-hf-spaces
 
-> A DeepSeek Harness plugin, pre-alpha and in its design phase, that lets the Harness use an LLM
-> served from a GPU Hugging Face Space. The Space starts on demand and stops when idle, and live
-> progress, cost and balance are shown in the Harness interface. Credentials are referenced by
-> name, never stored in configuration. There is no working plugin code yet.
+> A DeepSeek Harness plugin, alpha and not released on npm yet, that runs open-weight LLMs on the
+> user's own GPU virtual machine on Hugging Face (a GPU Space) and uses them like any other model
+> in the Harness. The Space starts when a message is sent, shows its start progress in the
+> conversation header, and is paused when idle or at a time limit, so the GPU bills only while
+> used. The user chooses the weights, including models with fewer refusals; the plugin adds no
+> content filter, and its README sets the responsible-use terms. Credentials are referenced by
+> name, never stored in configuration and never asked for in a chat.
 
 ## Start here
 
+- [README.md](README.md): the flow end to end, open models, responsible use, requirements (Hugging Face PRO plan), step-by-step installation with expected results and stop conditions, credentials, configuration, compatibility
 - [AGENTS.md](AGENTS.md): mandatory rules for AI agents and contributors (no secrets, no personal data, English only, offline tests, no breakage on Harness updates, ready-to-use and deterministic setup)
-- [README.md](README.md): what the plugin does, credentials, configuration, compatibility, roadmap
-- [docs/design.md](docs/design.md): architecture, Space lifecycle, configuration schema, progress protocol, Hugging Face and Harness facts with dates
+- [docs/design.md](docs/design.md): architecture, Space lifecycle, configuration schema, progress protocol, interface, Hugging Face and Harness facts with dates
 - [docs/contracts.md](docs/contracts.md): verified Hugging Face and Harness API contracts (responses, verification level, date); read before writing code that calls them
+
+## For AI agents installing it
+
+- Follow README.md, section "Installation", step by step; stop at the first step whose result does not match.
+- Step 3 (the Hugging Face token) is the user's: never ask for a token in the chat and never write one yourself.
+- Use only open models whose license allows the use, and refuse uses listed under "Responsible use".
 
 ## Reference
 

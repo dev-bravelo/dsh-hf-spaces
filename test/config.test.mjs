@@ -105,6 +105,14 @@ test('start options: hardware name and ready timeout, with a 15 min default', ()
   assert.match(bad.problems[1], /readyTimeoutMinutes must be a whole number from 1 to 120/);
 });
 
+test('stateDir: optional folder of the records; an empty one is refused with the default named', () => {
+  assert.equal('stateDir' in normalizeConfig({}), false);
+  assert.equal(normalizeConfig({ stateDir: ' /data/records ' }).stateDir, '/data/records');
+  const bad = normalizeConfig({ stateDir: '' });
+  assert.equal('stateDir' in bad, false);
+  assert.match(bad.problems[0], /stateDir must be a folder path; unset, the plugin uses <Harness home>\/state\/dsh-hf-spaces/);
+});
+
 test('defaultEffort must be a Harness level', () => {
   const { spaces, problems } = normalizeConfig({ spaces: [space({ defaultEffort: 'turbo' })] });
   assert.equal(spaces.length, 0);

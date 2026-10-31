@@ -22,6 +22,8 @@ before(async () => {
     if (req.method === 'POST' && req.url === '/api/spaces/your-user/your-llm-space/variables') return json(200, {});
     if (req.method === 'POST' && req.url === '/api/spaces/your-user/not-mine/pause') return json(403, { error: 'forbidden' });
     if (req.method === 'POST' && req.url === '/api/spaces/your-user/not-mine/variables') return json(403, { error: 'forbidden' });
+    if (req.url.startsWith('/api/settings/billing/usage-v2?')) return json(200, { usage: { Spaces: [{ label: 'your-user/your-llm-space', quantity: 3, totalCostMicroUSD: 125001 }] } });
+    if (req.url === '/api/whoami-v2') return req.headers.authorization === 'Bearer bad' ? json(401, {}) : json(200, { name: 'your-user', auth: { accessToken: { role: 'fineGrained' } } });
     if (req.url === '/v1/models') return json(200, { object: 'list', data: [{ id: 'open-model-q6' }, { id: 'second' }] });
     if (req.url === '/api/spaces/your-user/your-llm-space') {
       return json(200, {
@@ -70,6 +72,18 @@ test('a start variable is a POST of {key, value} with the control credential', a
   assert.deepEqual([request.method, request.url, request.auth], ['POST', '/api/spaces/your-user/your-llm-space/variables', 'Bearer control-token']);
   assert.deepEqual(JSON.parse(request.body), { key: 'SPACE_SESSION', value: '{"id":"x"}' });
   await assert.rejects(hf.setVariable('your-user/not-mine', 'SPACE_SESSION', 'x'), /setting variable SPACE_SESSION of Space your-user\/not-mine failed: HTTP 403/);
+});
+
+test('billing usage: Unix seconds, billing credential; whoami: account and token role', async () => {
+  const hf = byKind();
+  const body = await hf.getBillingUsage(Date.UTC(2026, 9, 1), Date.UTC(2026, 9, 31));
+  assert.equal(body.usage.Spaces[0].quantity, 3);
+  const request = seen.at(-1);
+  assert.equal(request.url, `/api/settings/billing/usage-v2?startDate=${Date.UTC(2026, 9, 1) / 1000}&endDate=${Date.UTC(2026, 9, 31) / 1000}`);
+  assert.equal(request.auth, 'Bearer billing-token');
+  assert.deepEqual(await hf.whoami('control'), { user: 'your-user', role: 'fineGrained' });
+  assert.equal(seen.at(-1).auth, 'Bearer control-token');
+  await assert.rejects(client('bad').whoami('inference'), /the inference credential was not accepted: HTTP 401/);
 });
 
 test('served models: read from the Space address only, with the inference credential', async () => {

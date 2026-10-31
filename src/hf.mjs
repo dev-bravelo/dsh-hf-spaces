@@ -26,6 +26,7 @@ const spacePath = id => id.split('/').map(encodeURIComponent).join('/');
 function hint(status, kind) {
   if (status === 400 && kind === 'control') return ' (Hugging Face refused the request; for a hardware change, check the name, such as a100-large or l40sx1)';
   if (status === 401) return ` (the ${kind} credential is missing or was not accepted)`;
+  if (status === 403 && kind === 'billing') return ' (the billing credential cannot read the account billing)';
   if (status === 403) return kind === 'control'
     ? ' (the control credential cannot change this Space; it needs write access and the Space owner)'
     : ' (the inference credential cannot read this Space)';
@@ -167,6 +168,26 @@ export function createHfClient({ apiURL = HF_API, getToken, fetchImpl = globalTh
 
     /** Changes the hardware; Hugging Face restarts the Space on it. */
     requestHardware: (id, flavor) => control(id, 'hardware', `moving to ${flavor}`, { flavor }),
+
+    /**
+     * Account usage between two times (GET /api/settings/billing/usage-v2, Unix seconds, billing
+     * credential); read by the private prototype since 2026-10-30. The balance itself is not in
+     * it: only the logged-in billing page shows it (docs/contracts.md, section 4).
+     */
+    async getBillingUsage(fromMs, toMs) {
+      const response = await api(`/api/settings/billing/usage-v2?startDate=${Math.floor(fromMs / 1000)}&endDate=${Math.floor(toMs / 1000)}`, { kind: 'billing' });
+      if (!response.ok) throw new HfError(`reading the billing usage failed: HTTP ${response.status}${hint(response.status, 'billing')}`, response.status);
+      return response.json();
+    },
+
+    /** The account a credential belongs to, and its token role (GET /api/whoami-v2). */
+    async whoami(kind) {
+      const response = await api('/api/whoami-v2', { kind });
+      if (!response.ok) throw new HfError(`the ${kind} credential was not accepted: HTTP ${response.status}`, response.status);
+      const body = await response.json();
+      const role = body?.auth?.accessToken?.role;
+      return { ...(typeof body?.name === 'string' ? { user: body.name } : {}), ...(typeof role === 'string' ? { role } : {}) };
+    },
 
     /**
      * Follows the Space run log (server-sent events) and calls `onLine` with each log line, until

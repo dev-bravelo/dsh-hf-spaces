@@ -228,9 +228,18 @@ do not fit: Space state does not come from the session log.
   plugin registers there too), not on `.corner`, which is a
   single slot that the right sidebar already uses.
 - **Toasts:** drawn by the plugin in `shell.overlay`, because there is no toast API.
-- **Settings:** the Harness shows no page for `Config`. The plugin registers a page on
-  `plugins.bundle.config`. Until Phase 2 builds one, settings are edited in the profile's
-  configuration file, so field descriptions live in the README and the example file.
+- **Settings:** the Harness shows no page for `Config`. The plugin registers its setup page on
+  `plugins.bundle.config` (key: the package name). Settings are still edited in the profile's
+  configuration file; the page shows the effective values and the checks.
+- **Sidebar tab:** `ctx.sidebarRightTabs.register({ id, kind, title, guide })` and the body on
+  `sidebar.right.pane.tab` under `key: id`; `ctx.sidebarRight.openTab(kind, options)` opens it in
+  the session on screen and throws when there is none (`dsh-client-ui-sidebar-right` README and
+  code, read on 0.2.1-rc.3, 2026-10-31).
+- **Effective model of a session:** the model selector uses `next ?? catalog default`. The
+  `modelDirectories` service (`dsh-client-ui-model-selection`) resolves it:
+  `directoryFor(sessionId).store` with `getSnapshot().current` = `{ provider, model } | null`.
+  Read in its code on 0.2.1-rc.3 (2026-10-31), not in a README, so the plugin uses it as an
+  optional service and falls back to `next` without it.
 - **Client:** one plain-JavaScript file, no build step, React from the window.
 - **Routes:** every plugin route is guarded with `ctx.connection.requestRejection`; none is left
   open just because it is on loopback.
@@ -242,21 +251,24 @@ Each open item says whose limit it is and what would settle it.
 | Item | Whose limit | What settles it |
 |---|---|---|
 | Which fine-grained permission each Space endpoint requires | Ours: only two tokens were at hand, both with broad permissions | A token with only `repo.content.read`, then one with `repo.write` added, created by the account owner for the test |
-| `pause`, `restart` and `hardware` sent from Node.js `fetch` | Ours: not exercised (the prototype sent them from Python) | Phase 1 offline tests, then one real start and stop |
 | `logs/run` in a stopped stage other than `PAUSED` | Ours: no such Space in the test account | A free CPU Space left to sleep |
 | The `SLEEPING` stage name | Provider: not in the official enum | Observing a sleeping Space's runtime |
-| Run-log lines while a Space starts, read from Node.js | Ours: read so far only by the Python prototype | One real start in Phase 1 |
-| Every Harness item in section 2 except admission | Ours: read, not run | Runtime tests and a manual check on the Desktop in Phase 2 |
+| The Client half on the Desktop (slots, sidebar tab, setup page, `modelDirectories`) | Ours: offline tests of the script only | The manual check on the Desktop |
 | `ctx.connection.requestRejection` and `connection.fetch` for third-party plugins | Provider: in code, with no README section for third parties | A runtime test; prefer them only while the code keeps them |
-| Effective provider when `modelSelection.next` is `undefined` | Ours: not found yet | Reading the model catalog client, or a runtime test |
 | A second registrant on a single slot | Ours: not tested | Avoided by design: the plugin uses list and keyed slots only |
 | `EventSource` over the `dsh-app://` scheme | Ours: not tested | Not needed: the Client reads the stream with `fetch` |
 | `dsh.client.immediately` | Provider: set in the official template, not documented | Leave it as the template sets it |
 | Whether every chat template rejects an unknown effort (HTTP 500), or some ignore it | Ours: seen on one llama.cpp Qwen template only | The effort check of each new Space, in Phase 1 |
 
+Settled by the first real start of this plugin (0.1.0-alpha.7, Desktop 0.2.1-rc.3, Windows,
+2026-10-31, private A100 Space): the start variable (`POST .../variables`), `restart` and `pause`
+sent from Node.js `fetch`, and the run-log progress lines read from Node.js. The Space was ready
+in 3 min 11 s, stopped by `/space off` after 18 min, cost estimated at US$ 0.75 (18 billed
+minutes at US$ 0.041667). `hardware` was not needed (the Space already asked for that flavor).
+
 Settled in Phase 0 as provider behavior:
 - `GET /api/spaces/{id}/volumes` does not exist; volumes are in `GET /api/spaces/{id}`.
 - `logs/run` stays silent while the Space is paused; the official client behaves the same.
-- The account balance is not readable by token (see design, section 2).
+- The account balance is not readable by token (see design, section 2); the plugin shows no balance.
 - The Harness has no toast API and draws no settings page from `Config`.
 - `conversation.session.header.corner` is a single slot already used by the Harness.

@@ -28,7 +28,7 @@ Every fact below is marked with its source and verification level:
 **Goal.** A user with a GPU Hugging Face Space that serves an OpenAI-compatible API can pick its
 models in the DeepSeek Harness model selector and use them as if they were always available.
 - The Space starts on demand, stops when idle or at a time limit, and bills only while used.
-- State, progress, cost and balance are visible in the Harness interface.
+- State, progress and cost are visible in the Harness interface.
 - Manual controls never wake the model.
 
 **Non-goals for 1.0:**
@@ -48,8 +48,8 @@ models in the DeepSeek Harness model selector and use them as if they were alway
 | Paused time is not billed; a Space stays paused "until manually restarted" | [spaces-gpus](https://huggingface.co/docs/hub/spaces-gpus) | The plugin stops a Space by pausing it, so a stray visit cannot wake it |
 | Sleep (after the configured inactivity) is not billed, and a Space wakes "once it receives a new visitor" | Same | Sleep is only a safety net when the Harness is closed |
 | Hardware is billed per minute while Starting or Running | Same. Verified: `usage-v2` reports minutes | Cost estimate = minutes × hourly price |
-| A paused Space keeps no hardware reserved; a restart may wait for a free GPU | Verified (an L40S was unavailable twice) | "Waiting for GPU" is a visible stage with no time estimate |
-| The account balance is not available through the API, only on the logged-in billing page. Usage is (`/api/settings/billing/usage-v2`, Unix seconds) | Verified 2026-10-27 | Balance = value the user enters − usage billed since then, labeled "estimated" |
+| A paused Space keeps no hardware reserved; a restart may wait for a free GPU | Verified (an L40S was unavailable twice) | The first phase, "Starting the Space", covers the wait for a GPU and the container boot, until the Space prints its first progress line |
+| The account balance is not available through the API, only on the logged-in billing page. Usage is (`/api/settings/billing/usage-v2`, Unix seconds) | Verified 2026-10-27 | The plugin shows what was billed (each Space today and this month, each start), never a balance. Decided with the user on 2026-10-31: no balance entered by hand |
 
 The Space endpoints, their responses and what was verified on 2026-10-30 are in
 [contracts.md](contracts.md), section 1. Two facts from there change the plan:
@@ -74,12 +74,12 @@ The Space endpoints, their responses and what was verified on 2026-10-30 are in
 ```
  Harness window (Client half)                    Harness backend (Host half)
  ┌──────────────────────────────┐   loopback   ┌──────────────────────────────────────┐
- │ header indicator   ◄─────────┼── events ────┤ routes: GET state · GET events (SSE) │
- │ sidebar tab                  │              │         POST start/stop/extend/balance│
+ │ header indicator   ◄─────────┼── state ─────┤ routes: GET state · GET setup        │
+ │ sidebar tab · setup page     │              │         POST start/stop/extend       │
  │ toasts             ──────────┼── actions ──►│                                      │
  └──────────────────────────────┘              │ supervisor (one per Space)           │
                                                │   state machine · idle/time limit ·  │
- Model selector ◄── provider route per Space ──┤   cost · balance estimate · history  │
+ Model selector ◄── provider route per Space ──┤   cost · billing usage · records     │
                                                │ HF client (fetch, Node built-ins)    │
                                                └───────────────┬──────────────────────┘
                                                                │ HTTPS + token
@@ -113,14 +113,19 @@ Further rules:
 - **Start variables:** before a start it makes, the plugin writes the Space variables declared in
   `start.variables` (or the manifest's `startVariables`), rendered from placeholders. A Space that
   needs a fresh deadline or session id at each boot declares it as data.
-- **Space started outside the Harness:** idle rules only; no time limit.
+- **Space started outside the Harness** (or running when the Harness opened): idle rules only,
+  counted from the moment the plugin sees it serving, with or without a request; no time limit.
+- **Configuration change:** the stop rules, the last failure and the records carry over to the
+  new entry.
 - **Harness closed while the Space runs:** the plugin cannot pause it. The Space's sleep time
   (`gcTimeout`, read from the runtime API) is then the only limit, and the interface shows it
   next to the plugin's own rules.
 - **After a failed start:** no automatic retry for a cooldown period. A manual Start ignores the
   cooldown.
-- **History:** every transition is recorded as one JSON line in the plugin's state folder (no
-  secrets). That history feeds the sidebar.
+- **Records:** each start (when it began, was ready and ended, why it ended, hardware and cost)
+  is kept in `ledger.json` in the plugin's state folder, `<Harness home>/state/dsh-hf-spaces`,
+  the last 50 only and no secrets. A start still open when the Harness closed shows "end not
+  seen". The records feed the sidebar tab.
 
 ## 5. Credentials
 
@@ -128,16 +133,16 @@ Further rules:
 |---|---|---|---|
 | `credentials.inference` | yes | Model requests to a private Space | Read the Space |
 | `credentials.control` | to start/stop | Pause, restart, read runtime and logs | Write the Space |
-| `credentials.billing` | no | `usage-v2` cost and balance estimate | Read billing |
+| `credentials.billing` | no | `usage-v2`: what each Space was billed today and this month | Read billing |
 
 How they are handled:
 - **Names, not values:** each setting is a credential **name** (default `HF_TOKEN`), resolved
   from the Harness vault when a request needs it, and never stored by the plugin.
-- **Status in the interface:** set or missing, and where from (`ctx.credentials.describe`).
+- **Status in the interface:** in the vault or missing, accepted by Hugging Face or not, its account and token role (`GET /api/whoami-v2`, once per token, never polled), never the value.
 - **What the plugin does when one is missing:**
   - without `inference`, the provider is listed but answers with what to configure;
   - without `control`, automatic start and the buttons are disabled, with the reason;
-  - without `billing`, cost comes from the hourly price only and there is no balance estimate.
+  - without `billing`, cost comes from the hourly price only, and the sidebar says billing was not read.
 - **Where tokens travel:** only to `https://huggingface.co` and to the Space's
   `https://*.hf.space` host. `http://` is refused except for `localhost`, used by offline tests.
 - **Redirects:** never followed with a token attached.
@@ -164,8 +169,8 @@ See [examples/config.example.yml](../examples/config.example.yml). Rules:
 - **Schema version:** the configuration carries `schemaVersion`, and old keys are migrated with a
   log line.
 - **Descriptions:** every field has one in English (more locales may follow). The Harness draws
-  no page from the schema, so until the plugin ships its own settings page (Phase 2, on
-  `plugins.bundle.config`), the descriptions are in the README and the example file.
+  no page from the schema. The plugin's own page (`plugins.bundle.config`) shows the effective
+  values and checks; the field descriptions are in the README and the example file.
 
 ### Ready to use: where each value comes from
 
@@ -281,8 +286,8 @@ Only what a model request strictly needs:
    user's waiting message and states that the earlier line came from the plugin.
    - **Why:** without that, a model treated "the last user message" as the plugin's notice,
      answered it, and invented a background job to check.
-3. **Everything else** happens in the interface: warnings, progress, cost, balance and
-   controls. That covers the time-limit warning, failure, low balance and credential problems.
+3. **Everything else** happens in the interface: warnings, progress, cost and controls. That
+   covers the time-limit warning, failure and credential problems.
    - **What never happens:** a chat turn opened by the plugin for these, or a background job
      used as a progress bar.
 
@@ -290,14 +295,21 @@ Only what a model request strictly needs:
 
 | Element | Slot | Content |
 |---|---|---|
-| Header indicator | `conversation.session.header.utilities` | Shown only when the session's model belongs to a configured Space. State, percent and time left while starting; time on, cost of this start and "stops at hh:mm" when ready. Start, Stop and Extend buttons |
-| Sidebar tab | right sidebar tab | One card per Space: progress bar, today's and this month's cost, estimated balance with an input, time-limit countdown, credential status, recent starts, run-log tail |
-| Toasts | `shell.overlay` | "Stops in 5 min" with Extend and Stop, low balance, start failed, credential missing |
+| Header indicator | `conversation.session.header.utilities` | Shown only when the session's model belongs to a configured Space: the session's own choice, or else the profile default, read from the model-selection service (`modelDirectories`, optional). One short line that fits the narrow header: state dot, name, short state ("starting 42% · ~2 min", "serving · until 13:48"), a small meter while starting, and one action (Start or Stop). The state is a button that opens the sidebar tab; the full line is its tooltip |
+| Sidebar tab | `sidebarRightTabs` + `sidebar.right.pane.tab` | "Hugging Face Spaces", also listed on the sidebar's start page. One card per Space: state and buttons, progress bar, time on, stop time, what Hugging Face billed today and this month, the last 5 starts (duration, cost, why each ended), the run-log tail of the last start; then the state of each credential |
+| Toasts | `shell.overlay` | Time limit soon with Extend and Stop, start failed, refused effort levels, a missing or refused inference or control credential, and the answer to the last button pressed |
+| Setup page | `plugins.bundle.config`, key `dsh-hf-spaces` | Configuration problems, each credential, and per Space: what was read (Space, manifest), whether the models were served, the effort check, and each effective value with its source |
 
 Interface rules:
 - **Theme:** semantic theme tokens (`--dsw-alias-*`), with light and dark checked.
 - **Accessibility:** keyboard focus and roles kept on every control.
 - **Imports:** no internal Harness Client packages imported as a component library.
+- **Look:** one scoped style sheet (`dhs-` classes) with the Harness theme tokens only; one color
+  per state, always with a word; no motion under prefers-reduced-motion. Checked in a browser
+  preview with the tokens extracted from the installed Harness (light and dark, 480 to 980 px).
+- **Updates:** only `slots` is required. The sidebar services and the model-selection service
+  are waited for with `ctx.inject`, and every slot with `ctx.slots.inject`; `dsh.client.inject`
+  lists no new package. A Harness version without one of them only loses that part.
 
 ## 10. Lessons from the private prototype
 
@@ -318,7 +330,11 @@ on the Harness 0.2.x line. Lessons, all verified:
    - copy ~90 s for 22.5 GB;
    - load ~55 s;
    - first request ~35–45 s.
-6. **The account balance cannot be read by token,** so it must be entered by the user.
+6. **The account balance cannot be read by token.** The plugin shows what was billed instead,
+   and no balance (decided with the user on 2026-10-31).
+7. **A background job is not a progress display.** The prototype's start task sat behind a
+   collapsed "1 background job running" line, and the user did not find the progress. This
+   plugin shows it in the header and the sidebar tab only.
 
 ## 11. Roadmap
 
@@ -326,8 +342,8 @@ on the Harness 0.2.x line. Lessons, all verified:
 |---|---|---|
 | 0. Contracts | A verified contract note: Client bundle format and what it receives (React, theme, locale), the three slots, `webServer` routes, credential APIs, HF Space endpoints | Each item verified on Harness 0.2.1-rc.3 or marked not available |
 | 1. Host | Provider routes, supervisor, HF client, Space manifest reader with the value order of section 6, routes, offline tests (HF and Space simulators), admission test with the installed Harness's own rule | Parity with the prototype except the UI; `npm run check` green; admitted on 0.2.1-rc.3 and refused from `0.3.0-alpha.1` on; the model appears in the selector with its name and only the effort levels the Space accepts (section 6, "Model names and reasoning efforts") |
-| 2. Client | Indicator, sidebar tab, toasts, and a setup page that lists each check (credentials, Space, manifest, models, effort levels) and each effective value with its source | Manual test on the Desktop by a maintainer |
-| 3. Migration | Replace the prototype in a real profile, with an explicit `route` equal to the prototype's provider id and its event prefix set in that profile. The prototype's Space gets a manifest, so the profile keeps only the Space id, the route and the credential names | Sessions bound to the old provider id keep working |
+| 2. Client | Indicator, sidebar tab, toasts, and a setup page that lists each check (credentials, Space, manifest, models, effort levels) and each effective value with its source | Manual test on the Desktop by a maintainer. **Built 2026-10-31**, offline tests of every part; the Desktop check is the user's |
+| 3. Migration | Replace the prototype in a real profile, with an explicit `route` equal to the prototype's provider id and its event prefix set in that profile. The prototype's Space gets a manifest, so the profile keeps only the Space id, the route and the credential names | Sessions bound to the old provider id keep working. **Done 2026-10-31:** route `rvn`, prototype removed from the profile; the Space has no manifest yet, so its models stay in the profile (a commit to the Space repository would rebuild it) |
 | 4. 1.0 | npm package, compatibility matrix, audit for secrets and personal data, install guide for AI agents, repository made public | Audit clean; `npm run check` green; an AI agent that follows only the install guide sets the plugin up on a clean profile, without asking for a secret in the chat |
 
 ## 12. Open questions

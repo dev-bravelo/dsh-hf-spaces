@@ -1,7 +1,9 @@
-// Runtime tests of the chat gate on an installed DeepSeek Harness: real agent loop and jobs
-// registry; one local server plays both Hugging Face and the Space. No GPU, no network beyond
+// Runtime tests of the chat gate on an installed DeepSeek Harness: real agent loop, jobs registry
+// (to prove the plugin never uses it) and command service; one local server plays both Hugging
+// Face and the Space. No GPU, no network beyond
 // 127.0.0.1. Skipped under plain `node --test` (AGENTS.md, section 6).
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -39,6 +41,8 @@ if (!root) {
         const json = (status, payload) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(payload)); };
         const runtime = () => ({ stage: hub.stage, hardware: { current: hub.current, requested: 'a100-large' } });
         if (req.url === `/api/spaces/${SPACE}`) return json(200, { sha: 'rev1', host: hub.api, siblings: [] });
+        if (req.url.startsWith('/api/settings/billing/usage-v2?')) return json(200, { usage: { Spaces: [] } });
+        if (req.url === '/api/whoami-v2') return json(200, { name: 'your-user' });
         if (req.url === '/api/spaces/hardware') return json(200, [{ name: 'a100-large', unitCostUSD: 0.041667, unitLabel: 'minute' }]);
         if (req.url === `/api/spaces/${SPACE}/runtime`) {
           if (--hub.left <= 0) { hub.left = Infinity; hub.stage = bootsInto; hub.current = bootsInto === 'RUNNING' ? 'a100-large' : null; }
@@ -100,42 +104,47 @@ if (!root) {
     });
     await until('route registered', () => ctx.llm.listProviders().some(p => p.id === 'chat-llm'));
     const sessionId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const { agent } = await ctx.agents.create({ sessionId, agentOptions: { provider: 'chat-llm', model: MODEL } });
+    const handle = await ctx.agents.create({ sessionId, agentOptions: { provider: 'chat-llm', model: MODEL } });
+    const { agent } = handle;
     const send = text => agent.followup(llm.createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] }));
     const texts = type => agent.session.snapshotEvents().filter(e => e.type === type)
       .flatMap(e => (e.data.message ?? e.data).content ?? []).filter(b => b.type === 'text').map(b => b.text);
-    const jobs = () => ctx.jobs.list(sessionId).filter(job => job.kind === 'hf-space');
+    const jobs = () => ctx.jobs.list(sessionId);
     const command = async line => (await ctx.commands.execute(agent, line, [], new AbortController().signal)).result;
+    const status = async () => (await command('/space status')).text;
+    const ledger = () => {
+      try { return JSON.parse(fs.readFileSync(path.join(env.store, 'state', 'dsh-hf-spaces', 'ledger.json'), 'utf8')).starts; } catch { return []; }
+    };
     t.after(async () => {
       await env.dispose();
       await hub.close();
       delete process.env.TEST_HF_READ;
     });
-    return { ctx, hub, agent, sessionId, send, texts, jobs, command };
+    return { ctx, hub, agent, handle, sessionId, send, texts, jobs, command, status, ledger };
   }
 
-  test('a message to a stopped Space starts it, shows a progress job and resumes quoting the user', { timeout: 60000 }, async t => {
+  test('a message to a stopped Space starts it, shows the progress in the interface and resumes quoting the user', { timeout: 60000 }, async t => {
     const x = await setup(t, { bootReads: 3 });
     x.send('hello there');
     await x.agent.whenIdle();
     assert.match(x.texts('assistant/message').at(-1), /^🔌 Chat LLM was off\. The dsh-hf-spaces plugin is starting/);
-    assert.match(x.texts('assistant/message').at(-1), /under "background job" \(task "Starting Chat LLM"\)/);
-    const [progress] = await until('progress job', () => x.jobs().length && x.jobs());
-    assert.equal(progress.label, 'Starting Chat LLM');
+    assert.match(x.texts('assistant/message').at(-1), /in the Chat LLM indicator at the top of this conversation, and in the plugin's sidebar tab/);
+    assert.match(await x.status(), /starting.*· \d+% ·/s, 'the status shows the progress while it starts');
     await until('Space ready and session resumed', () => x.hub.chats.length > 0);
     await x.agent.whenIdle();
-    const settled = x.ctx.jobs.get(progress.id, x.sessionId);
-    assert.equal(settled.status, 'completed');
-    assert.match(settled.detail ?? '', /^Chat LLM ready in /);
+    assert.equal(x.jobs().length, 0, 'no background job: the progress is in the interface');
+    const [start] = x.ledger();
+    assert.equal(start.space, SPACE);
+    assert.ok(start.readyAt >= start.startedAt, 'the start is recorded with its ready time');
     // The only request to the Space is the resumed turn, and it quotes the waiting message.
     assert.equal(x.hub.chats.length, 1);
     const resumed = x.hub.chats[0].messages.filter(m => m.role === 'user').map(m => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join('\n');
     assert.match(resumed, /Automatic notice from the dsh-hf-spaces plugin/);
     assert.match(resumed, /«hello there»/);
     assert.ok(x.hub.calls.includes(`POST /api/spaces/${SPACE}/restart`));
-    // Woken once by the plugin; no "background job … finished" notice reached the model.
+    // Woken once by the plugin, and by nothing else.
     await sleep(500);
-    assert.equal(x.texts('user/message').filter(text => /background job/.test(text) && !/dsh-hf-spaces/.test(text)).length, 0);
+    assert.equal(x.texts('user/message').length, 2, 'the user message and the plugin notice');
     assert.equal(x.texts('user/message').filter(text => /Automatic notice from the dsh-hf-spaces plugin/.test(text)).length, 1);
     assert.equal(x.texts('assistant/message').at(-1), 'Hi! How can I help?');
   });
@@ -154,10 +163,10 @@ if (!root) {
     const x = await setup(t, { bootReads: 2, bootsInto: 'RUNTIME_ERROR' });
     x.send('first');
     await x.agent.whenIdle();
-    const [progress] = await until('progress job', () => x.jobs().length && x.jobs());
-    await until('start failed', () => x.ctx.jobs.get(progress.id, x.sessionId).status === 'failed');
-    assert.match(x.ctx.jobs.get(progress.id, x.sessionId).detail, /Chat LLM could not be started: the Space reported RUNTIME_ERROR/);
-    assert.ok(x.hub.calls.includes(`POST /api/spaces/${SPACE}/pause`), 'the failed start was paused');
+    await until('start failed and paused', () => x.hub.calls.includes(`POST /api/spaces/${SPACE}/pause`));
+    // The failed start was paused: the status still says why it failed, until the next start.
+    await until('failure shown', async () => /off\..*Chat LLM could not be started: the Space reported RUNTIME_ERROR/s.test(await x.status()));
+    await until('failure recorded', () => /RUNTIME_ERROR/.test(x.ledger()[0]?.end ?? ''));
     await sleep(500);
     assert.equal(x.texts('assistant/message').length, 1, 'no turn was opened for the failure');
     x.send('second');
@@ -166,15 +175,15 @@ if (!root) {
     assert.equal(x.hub.calls.filter(call => call.endsWith('/restart')).length, 1, 'no automatic start during the cooldown');
   });
 
-  test('the stop control of the progress job pauses a starting Space, without a cooldown or a turn', { timeout: 60000 }, async t => {
+  test('a stop during a start (/space off, or the Stop button) pauses the Space, without a cooldown or a turn', { timeout: 60000 }, async t => {
     const x = await setup(t, { bootReads: Infinity });
     x.send('hello');
     await x.agent.whenIdle();
-    const [progress] = await until('progress job', () => x.jobs().length && x.jobs());
     await until('Space starting', () => x.hub.calls.includes(`POST /api/spaces/${SPACE}/restart`));
-    assert.equal(x.ctx.jobs.kill(progress.id, x.sessionId, 'cancelled by the user'), 'requested');
-    await until('job killed', () => x.ctx.jobs.get(progress.id, x.sessionId).status === 'killed');
-    await until('Space paused', () => x.hub.calls.includes(`POST /api/spaces/${SPACE}/pause`));
+    const off = await x.command('/space off');
+    assert.equal(off.kind, 'success', off.text);
+    assert.ok(x.hub.calls.includes(`POST /api/spaces/${SPACE}/pause`));
+    assert.equal(x.ledger()[0].end, '/space off');
     await sleep(300);
     assert.equal(x.texts('assistant/message').length, 1, 'no turn was opened');
     // A user stop is not a failure: the next message starts the Space again, with no cooldown.
@@ -183,13 +192,11 @@ if (!root) {
     assert.match(x.texts('assistant/message').at(-1), /^🔌 Chat LLM was off/);
   });
 
-  test('a stop pressed before the Space began starting cancels the start and sends no pause', { timeout: 60000 }, async t => {
+  test('a stop pressed right after the message cancels the start; a pause is sent only if it had begun', { timeout: 60000 }, async t => {
     const x = await setup(t, { bootReads: Infinity });
     x.send('hello');
     await x.agent.whenIdle();
-    const [progress] = await until('progress job', () => x.jobs().length && x.jobs());
-    x.ctx.jobs.kill(progress.id, x.sessionId, 'cancelled by the user');
-    await until('job killed', () => x.ctx.jobs.get(progress.id, x.sessionId).status === 'killed');
+    await x.command('/space off');
     await sleep(1500);
     // Either it was cancelled before the restart (no pause needed), or it was paused after it.
     const restarted = x.hub.calls.includes(`POST /api/spaces/${SPACE}/restart`);
@@ -230,8 +237,8 @@ if (!root) {
     assert.equal(on.kind, 'success', on.text);
     assert.match(on.text, /^Starting Chat LLM/);
     assert.match(on.text, /Nothing was sent to the model\./);
-    const [progress] = await until('progress job of /space on', () => x.jobs().length && x.jobs());
-    await until('start done', () => x.ctx.jobs.get(progress.id, x.sessionId).status === 'completed');
+    await until('start done', () => x.hub.probes.length === 2);
+    await sleep(300);
     assert.match((await x.command('/space on')).text, /already serving/);
     const status = (await x.command('/space status')).text;
     assert.match(status, /serving on a100-large\. On for \d+ s, estimated cost US\$ 0\.04\. Stops at \d{2}:\d{2}, or earlier after 30 min without use\./);
@@ -244,7 +251,40 @@ if (!root) {
     assert.match((await x.command('/space on other-route')).text, /No Space uses the route "other-route"/);
     await sleep(300);
     assert.equal(x.hub.chats.length, 0, 'no model request at all');
-    assert.equal(x.texts('user/message').length, 0, 'no wake and no job notice');
+    assert.equal(x.texts('user/message').length, 0, 'no wake and no notice');
+    assert.equal(x.jobs().length, 0);
+  });
+
+  test('a session closed while the Space starts is not woken when it is ready', { timeout: 60000 }, async t => {
+    const x = await setup(t, { bootReads: 3 });
+    x.send('hello');
+    await x.agent.whenIdle();
+    await x.handle.dispose(); // the user closed the session
+    await until('Space ready', async () => /serving/.test(await x.status()));
+    await sleep(1500);
+    assert.equal(x.hub.chats.length, 0, 'no turn in the closed session');
+  });
+
+  test('a Space found serving gets the idle rule at once, with no request from this Harness', { timeout: 60000 }, async t => {
+    const x = await setup(t, { stage: 'RUNNING' }, { stop: { idleMinutes: 0.05 } });
+    await until('idle pause', () => x.hub.calls.includes(`POST /api/spaces/${SPACE}/pause`), 20000);
+    assert.equal(x.hub.chats.length, 0);
+    const [start] = x.ledger();
+    assert.equal(start.seen, true, 'recorded as seen serving');
+    assert.equal(start.end, '0.05 min without use');
+  });
+
+  test('a configuration change carries the stop rules, the last failure and the records to the new entry', async () => {
+    const { attachChat } = await import(pathToFileURL(path.join(repo, 'src', 'chat.mjs')).href);
+    const { textsFor } = await import(pathToFileURL(path.join(repo, 'src', 'messages.mjs')).href);
+    const chat = attachChat({ ctx: { on: () => {}, get: () => undefined }, entries: new Map(), hf: {}, texts: textsFor('en'), token: async () => undefined, credentialNames: {} });
+    const tracked = { readyAt: 1, lastActivity: 2, startedAt: 1, deadline: 3 };
+    const previous = { tracked, lastFailure: 'x', lastFailureAt: 4, record: { space: SPACE }, refusedEfforts: ['m: high'], effortsChecked: 'k', waiters: new Map() };
+    const next = { waiters: new Map() };
+    chat.transfer(previous, next);
+    assert.equal(next.tracked, tracked, 'the same stop rules, deadline included');
+    assert.deepEqual([next.lastFailure, next.lastFailureAt, next.record, next.refusedEfforts, next.effortsChecked], ['x', 4, { space: SPACE }, ['m: high'], 'k']);
+    chat.dispose();
   });
 
   test('the idle rule pauses a Space this Harness saw serving', { timeout: 60000 }, async t => {
@@ -280,11 +320,10 @@ if (!root) {
     const x = await setup(t, { bootReads: 4, refuse: 'high', logLines: ['booting', copy] }, { reasoning: { off: 'none', medium: 'medium', high: 'high' } });
     x.send('hello');
     await x.agent.whenIdle();
-    const [progress] = await until('progress job', () => x.jobs().length && x.jobs());
     const lines = new Set();
-    await until('session resumed', () => {
-      const view = x.ctx.jobs.get(progress.id, x.sessionId);
-      if (view.progress) lines.add(view.progress);
+    await until('session resumed', async () => {
+      const match = /(Copying the model|Loading the model|Warming up|Starting the Space) · \d+% · about [^.]+ left/.exec(await x.status());
+      if (match) lines.add(match[0]);
       return x.hub.chats.length > 0;
     });
     assert.ok([...lines].some(line => /^Copying the model · \d+% · about .+ left$/.test(line)), [...lines].join(' | '));
@@ -298,20 +337,22 @@ if (!root) {
   test('a second start in the same Harness warms up with one request, without checking every level again', { timeout: 60000 }, async t => {
     const x = await setup(t, { bootReads: 1 }, { reasoning: { off: 'none', low: 'low', medium: 'medium' } });
     await x.command('/space on');
-    await until('first start ready', () => x.hub.probes.length === 3 && x.ctx.jobs.list(x.sessionId).every(j => j.status !== 'running'));
+    await until('first start ready', () => x.hub.probes.length === 3);
+    await sleep(300);
     await x.command('/space off');
     await x.command('/space on');
-    await until('second start ready', () => x.ctx.jobs.list(x.sessionId).filter(j => j.status === 'completed').length === 2);
+    await until('second start warmed up', () => x.hub.probes.length >= 4);
+    await sleep(1500);
     assert.equal(x.hub.probes.length, 4, 'three to check the levels, then one to warm up');
+    assert.equal(x.ledger().length, 2, 'both starts recorded');
   });
 
   test('a stop pressed during the warm-up ends it: no more requests, the Space is paused', { timeout: 60000 }, async t => {
     const x = await setup(t, { bootReads: 1, probeDelayMs: 800 }, { reasoning: { off: 'none', low: 'low', medium: 'medium' } });
     x.send('hello');
     await x.agent.whenIdle();
-    const [progress] = await until('progress job', () => x.jobs().length && x.jobs());
     await until('warm-up began', () => x.hub.probes.length >= 1);
-    x.ctx.jobs.kill(progress.id, x.sessionId, 'cancelled by the user');
+    void x.command('/space off');
     await until('Space paused', () => x.hub.calls.includes(`POST /api/spaces/${SPACE}/pause`));
     await sleep(2000);
     assert.ok(x.hub.probes.length < 3, `only the requests already sent: ${x.hub.probes.length}`);

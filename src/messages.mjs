@@ -9,12 +9,12 @@ export const LOCALES = Object.freeze(['en', 'pt-BR']);
 const min = m => `${Number.isInteger(m) ? m : Number(m.toFixed(2))} min`;
 
 const en = {
-  where: label => `at the top of this conversation, under "background job" (task "Starting ${label}")`,
+  where: label => `in the ${label} indicator at the top of this conversation, and in the plugin's sidebar tab`,
   starting: (label, where) => `🔌 ${label} was off. The dsh-hf-spaces plugin is starting its Hugging Face Space (3 to 7 min); progress shows ${where}. When it is ready, this session resumes by itself.`,
   stillStarting: (label, secs, line) => `⏳ ${label} is still starting (${secs} s${line ? `: ${line}` : ''}). When it is ready, this session resumes by itself.`,
   ready: (label, secs, pending) => [
     `[Automatic notice from the dsh-hf-spaces plugin, not a user message: ${label} started in ${secs} s and is answering.`,
-    'The "🔌" and "⏳" messages above were written by the plugin, not by you; the start task has ended and there is no job to follow.',
+    'The "🔌" and "⏳" messages above were written by the plugin, not by you; there is no task or job to follow.',
     pending
       ? `Answer now the user's message that was left without an answer:\n\n«${pending}»]`
       : 'Answer now the last user message written before these notices.]',
@@ -41,11 +41,13 @@ const en = {
   phase: { off: 'off', starting: 'starting', ready: 'serving', stopping: 'stopping', failed: 'failed', unknown: 'state unknown' },
   status: d => [
     `${d.label} (${d.route}): ${d.phase}${d.stage ? ` (${d.stage})` : ''}${d.hardware ? ` on ${d.hardware}` : ''}.`,
-    d.on ? `On for ${d.on}, estimated cost ${d.cost}.` : '',
+    d.progress ? `${d.progress}.` : '',
+    d.on ? `On for ${d.on}${d.cost ? `, estimated cost ${d.cost}` : ''}.` : '',
     d.stopsAt ? `Stops at ${d.stopsAt}${d.idle ? `, or earlier after ${d.idle} without use` : ''}.` : d.idle ? `Stops after ${d.idle} without use.` : '',
     d.warning ? `Time limit soon: /space +${d.extend} adds ${d.extend} min.` : '',
-    d.reason ? `Last: ${d.reason}.` : '',
+    d.failure ?? (d.reason ? `Last: ${d.reason}.` : ''),
     d.refused ? `Note: ${d.refused}.` : '',
+    d.usage ?? '',
   ].filter(Boolean).join(' '),
   onStarting: (label, rate, where) => `Starting ${label}${rate ? ` (${rate}/h while it starts and runs)` : ''}; progress shows ${where}. Nothing was sent to the model.`,
   alreadyServing: label => `${label} is already serving.`,
@@ -55,24 +57,26 @@ const en = {
   extended: (label, minutes, at, idle) => `Time limit extended by ${minutes} min: ${label} stops at ${at}${idle ? `, or earlier after ${idle} without use` : ''}.`,
   noLimit: label => `This start of ${label} has no time limit; nothing to extend.`,
   notRunning: label => `${label} is not running from this Harness; nothing to extend.`,
-  progressLabel: label => `Starting ${label}`,
-  phases: { allocate: 'Waiting for a Hugging Face GPU', copy: 'Copying the model', load: 'Loading the model', warmup: 'Warming up' },
+  phases: { allocate: 'Starting the Space', copy: 'Copying the model', load: 'Loading the model', warmup: 'Warming up' },
   progressLine: (phase, percent, left) => `${phase} · ${percent}% · about ${left} left`,
   refusedEfforts: levels => `the Space refused the effort levels ${levels}; remove them from "reasoning" in the configuration or the manifest`,
-  readyDetail: (label, elapsed) => `${label} ready in ${elapsed}`,
-  stoppedDetail: 'stopped from the task; the Space was paused',
-  stopUnconfirmed: reason => `stopped from the task, but the pause was not confirmed (${reason}); the GPU may still bill. Pause the Space on Hugging Face`,
-  replaced: 'the configuration changed; the start goes on',
-  sessionClosed: 'session closed; the start goes on',
+  commandDescription: 'Hugging Face Spaces without calling the model: status, on, off, +N extends the time limit',
+  offReason: '/space off',
+  limitReason: minutes => `time limit of ${min(minutes)}`,
+  idleReason: minutes => `${min(minutes)} without use`,
+  pausedElsewhere: 'paused outside the plugin (Hugging Face page, sleep time or the Space itself)',
+  endUnknown: 'end not seen (the Harness was closed)',
+  usageLine: (u, usd) => `Hugging Face billed this Space ${usd(u.today.usd)} today (${u.today.minutes} min) and ${usd(u.month.usd)} this month (${u.month.minutes} min).`,
+  usageUnavailable: error => `Billing not read: ${error}.`,
 };
 
 const ptBR = {
-  where: label => `no topo desta conversa, em "background job" (tarefa "Ligando ${label}")`,
+  where: label => `no indicador ${label} no topo desta conversa e na aba lateral do plugin`,
   starting: (label, where) => `🔌 ${label} estava desligado. O plugin dsh-hf-spaces está ligando o Space no Hugging Face (3 a 7 min); o andamento aparece ${where}. Quando ele estiver pronto, a sessão retoma sozinha.`,
   stillStarting: (label, secs, line) => `⏳ ${label} ainda está ligando (há ${secs} s${line ? `: ${line}` : ''}). Quando ele estiver pronto, a sessão retoma sozinha.`,
   ready: (label, secs, pending) => [
     `[Aviso automático do plugin dsh-hf-spaces, não é mensagem do usuário: ${label} ligou em ${secs} s e já responde.`,
-    'As mensagens "🔌" e "⏳" acima foram escritas pelo plugin, não por você; a tarefa de partida já terminou e não há job nem nada para acompanhar.',
+    'As mensagens "🔌" e "⏳" acima foram escritas pelo plugin, não por você; não há tarefa nem job para acompanhar.',
     pending
       ? `Responda agora à mensagem do usuário que ficou sem resposta:\n\n«${pending}»]`
       : 'Responda agora à última mensagem do usuário escrita antes desses avisos.]',
@@ -99,11 +103,13 @@ const ptBR = {
   phase: { off: 'desligado', starting: 'ligando', ready: 'servindo', stopping: 'desligando', failed: 'falhou', unknown: 'estado desconhecido' },
   status: d => [
     `${d.label} (${d.route}): ${d.phase}${d.stage ? ` (${d.stage})` : ''}${d.hardware ? ` em ${d.hardware}` : ''}.`,
-    d.on ? `Ligado há ${d.on}, custo estimado ${d.cost}.` : '',
+    d.progress ? `${d.progress}.` : '',
+    d.on ? `Ligado há ${d.on}${d.cost ? `, custo estimado ${d.cost}` : ''}.` : '',
     d.stopsAt ? `Desliga às ${d.stopsAt}${d.idle ? `, ou antes após ${d.idle} sem uso` : ''}.` : d.idle ? `Desliga após ${d.idle} sem uso.` : '',
     d.warning ? `Teto chegando: /space +${d.extend} soma ${d.extend} min.` : '',
-    d.reason ? `Último: ${d.reason}.` : '',
+    d.failure ?? (d.reason ? `Último: ${d.reason}.` : ''),
     d.refused ? `Atenção: ${d.refused}.` : '',
+    d.usage ?? '',
   ].filter(Boolean).join(' '),
   onStarting: (label, rate, where) => `Ligando ${label}${rate ? ` (${rate}/h enquanto liga e roda)` : ''}; o andamento aparece ${where}. Nada foi enviado ao modelo.`,
   alreadyServing: label => `${label} já está servindo.`,
@@ -113,15 +119,17 @@ const ptBR = {
   extended: (label, minutes, at, idle) => `Teto estendido em ${minutes} min: ${label} desliga às ${at}${idle ? `, ou antes após ${idle} sem uso` : ''}.`,
   noLimit: label => `Esta partida de ${label} não tem teto; nada a estender.`,
   notRunning: label => `${label} não está ligado por este Harness; nada a estender.`,
-  progressLabel: label => `Ligando ${label}`,
-  phases: { allocate: 'Aguardando a GPU do Hugging Face', copy: 'Copiando o modelo', load: 'Carregando o modelo', warmup: 'Aquecendo' },
+  phases: { allocate: 'Iniciando o Space', copy: 'Copiando o modelo', load: 'Carregando o modelo', warmup: 'Aquecendo' },
   progressLine: (phase, percent, left) => `${phase} · ${percent}% · faltam ~${left}`,
   refusedEfforts: levels => `o Space recusou os níveis de esforço ${levels}; tire-os de "reasoning" na configuração ou no manifesto`,
-  readyDetail: (label, elapsed) => `${label} pronto em ${elapsed}`,
-  stoppedDetail: 'parado pela tarefa; o Space foi pausado',
-  stopUnconfirmed: reason => `parado pela tarefa, mas a pausa não foi confirmada (${reason}); a GPU pode continuar cobrando. Pause o Space no Hugging Face`,
-  replaced: 'a configuração mudou; a partida continua',
-  sessionClosed: 'sessão encerrada; a partida continua',
+  commandDescription: 'Spaces do Hugging Face sem chamar o modelo: status, on liga, off desliga, +N estende o teto',
+  offReason: '/space off',
+  limitReason: minutes => `teto de ${min(minutes)}`,
+  idleReason: minutes => `${min(minutes)} sem uso`,
+  pausedElsewhere: 'pausado fora do plugin (página do Hugging Face, pausa por inatividade ou o próprio Space)',
+  endUnknown: 'fim não visto (o Harness estava fechado)',
+  usageLine: (u, usd) => `O Hugging Face cobrou deste Space ${usd(u.today.usd)} hoje (${u.today.minutes} min) e ${usd(u.month.usd)} no mês (${u.month.minutes} min).`,
+  usageUnavailable: error => `Cobrança não lida: ${error}.`,
 };
 
 /** The text set for a locale; English when the locale is unknown. */

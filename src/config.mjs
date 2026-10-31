@@ -163,7 +163,8 @@ export function checkBaseURL(url) {
 /**
  * Normalizes the plugin configuration. Spaces with a problem are left out of `spaces` and
  * reported in `problems`, each message prefixed with the Space id.
- * @returns {{ credentials: object, spaces: object[], problems: string[] }}
+ * @returns {{ credentials: object, locale: string, pollSeconds: number, stateDir?: string,
+ *   spaces: object[], problems: string[] }}
  */
 export function normalizeConfig(raw = {}) {
   const problems = [];
@@ -181,6 +182,11 @@ export function normalizeConfig(raw = {}) {
   if (!Number.isSafeInteger(pollSeconds) || pollSeconds < 1 || pollSeconds > 60) {
     problems.push('pollSeconds must be a whole number from 1 to 60');
     pollSeconds = DEFAULTS.pollSeconds;
+  }
+  let stateDir;
+  if (raw.stateDir !== undefined) {
+    if (typeof raw.stateDir === 'string' && raw.stateDir.trim()) stateDir = raw.stateDir.trim();
+    else problems.push('stateDir must be a folder path; unset, the plugin uses <Harness home>/state/dsh-hf-spaces');
   }
   const spaces = [];
   const routes = new Set();
@@ -240,5 +246,5 @@ export function normalizeConfig(raw = {}) {
       ...(startVariables.variables ? { startVariables: startVariables.variables } : {}),
     });
   }
-  return { credentials, locale, pollSeconds, spaces, problems };
+  return { credentials, locale, pollSeconds, ...(stateDir ? { stateDir } : {}), spaces, problems };
 }

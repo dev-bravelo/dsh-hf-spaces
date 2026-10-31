@@ -6,6 +6,95 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed (interface redesign, 0.1.0-alpha.8, after the first Desktop test)
+
+- **Header indicator: one short line.** The whole progress sentence and three buttons overflowed
+  the narrow header and covered the session title and chips (seen on the Desktop on
+  2026-10-31). Now: state dot, Space name, a short state ("starting 42% · ~2 min",
+  "serving · until 13:48"), a small progress meter, and one action (Start or Stop). The state is
+  a button that opens the sidebar tab; the full line is its tooltip. Extending moved to the
+  time-limit notice and the sidebar tab.
+- **Sidebar tab as a detail page:** state and action first; then the stage with percent, time
+  left and a progress bar, or the facts of the start (time on, cost so far, stop time with +N,
+  idle rule); then what this Space was billed today and this month, labelled as spending and
+  not as the balance; then the recent starts in aligned columns. The run log and the credentials
+  are folded, and the credentials open by themselves when one needs a fix.
+- **Notices look like the Harness's own** (its toast surface and elevation tokens). Only what
+  needs an action or blocks a Space; a button's answer disappears after 5 s unless it is an
+  error, and waits while the pointer is over it; a closed failure or effort notice stays closed
+  after a reload.
+- **Setup page:** configuration problems first, then each credential and each check with a word
+  and a color (ok, check, fix), then the values in use with their source, on the Harness's
+  settings-card surface.
+- **Style:** one scoped style sheet (`dhs-` classes) with the Harness theme tokens only, focus
+  rings, tabular numbers and no motion under prefers-reduced-motion. A missing token used before
+  (`--dsw-alias-label-error`) is replaced by the Harness's `--dsw-alias-state-error-primary`,
+  so errors are red again.
+- **Accessibility:** the state is announced once per change, never at each percent; the status
+  button's name starts with what it shows; every close button says what it closes.
+- **The interface reads the plugin every 5 s** (2 s while a Space starts or stops), so a start
+  begun from the chat shows within seconds.
+- **The first start phase is "Starting the Space"**, not "Waiting for a Hugging Face GPU": it
+  covers the GPU wait and the container boot until the Space prints its first progress line.
+
+### Added (Phase 2 complete and Phase 3, 0.1.0-alpha.7)
+
+- **Sidebar tab** "Hugging Face Spaces" (`sidebarRightTabs` + `sidebar.right.pane.tab`), also on
+  the sidebar's start page: one card per Space with state and buttons, progress bar, time on,
+  stop time, what Hugging Face billed today and this month, the last 5 starts (duration, cost,
+  why each ended) and the run-log tail of the last start; then the state of each credential.
+- **Setup page** in the Plugins panel (`plugins.bundle.config`): configuration problems, each
+  credential, and per Space what was read, whether the models were served, the effort check, and
+  each effective value with its source. Served by `GET /dsh-hf-spaces/setup`, guarded like the
+  other routes.
+- **Header indicator on the default model:** a session that never picked a model, and so runs on
+  the profile default, now shows the indicator, through the model-selection service. A Details
+  button opens the sidebar tab.
+- **Credential checks** (`GET /api/whoami-v2`, once per token, never polled): in the vault or not,
+  accepted or not, account and token role. A missing or refused inference or control credential
+  is a toast.
+- **Billing usage** (`usage-v2`, billing credential): each Space today and this month, read in the
+  background every 10 minutes at most, in the sidebar and in `/space status`.
+- **Start records** in `<Harness home>/state/dsh-hf-spaces/ledger.json` (`stateDir` changes it):
+  when each start began, was ready and ended, why, hardware and cost; the last 50, no secrets.
+- **Migration:** the plugin replaced its private prototype in a real profile, on the same route
+  (`rvn`), so sessions bound to it keep working.
+
+### Changed
+
+- **No background job for the progress.** The start progress shows only in the header indicator
+  and the sidebar tab; the chat notice points there. The prototype's start task sat behind a
+  collapsed "1 background job running" line, where the user did not find it. Stopping a start is
+  the Stop button or `/space off`.
+- **A failed start keeps its reason on screen** until the next start: the failed start is paused,
+  and the next read of the Space, "off", no longer hides why it failed.
+- **The interface needs only `slots`.** Every other Harness service is optional; a Harness
+  version without one only loses that part.
+- **No account balance.** Hugging Face does not expose it through the API, so the plugin shows
+  what was billed instead (decided with the user on 2026-10-31).
+
+### Fixed
+
+- `/space status` said "off" during the first moments of a start, and wrote "estimated cost
+  undefined" before the hardware price was read (runtime tests).
+- The runtime tests wrote their start records under the real Harness home; each test environment
+  now uses a temporary `DSH_HOME`.
+- **Code review of this version:**
+  - a Space found serving (started elsewhere, or running when the Harness opened) had no idle
+    rule until its first request, so it could bill until its own sleep time; it now gets the idle
+    rule at once;
+  - a configuration change while a Space served dropped its stop rules, last failure and effort
+    check; they now carry over;
+  - a session closed while the Space started was still woken when it was ready;
+  - an old failure stayed on screen after the Space was started elsewhere and served;
+  - a start that failed before ready, on the Space's own hardware, had no cost; it is now costed
+    on the hardware it asked for;
+  - a start only seen serving is marked as such, and its cost shown as a minimum;
+  - the interface no longer waits for the hardware price list, billing figures say when they are
+    stale, one token shared by several credentials is checked once, the vault is read at most
+    every 10 s for the credential view, the setup page is keyed by route, and a relative
+    `stateDir` is under the Harness home.
+
 ### Added (Phase 2, slice 6: the interface, 0.1.0-alpha.6)
 
 - **Start variables** (`start.variables`, or `startVariables` in the manifest): Space variables

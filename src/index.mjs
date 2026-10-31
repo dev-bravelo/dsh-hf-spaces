@@ -1,23 +1,23 @@
 /**
- * dsh-hf-spaces Host half, Phase 1:
- * - slice 1 puts each configured Hugging Face Space in the Harness model selector, with the open
- *   model name and only the effort levels configured for it. Values come from the configuration,
- *   the Space manifest and the Hugging Face API, in that order (docs/design.md, section 6);
- * - slice 2 gives each registered Space a supervisor that can start and pause it;
- * - slice 3 starts a stopped Space when a conversation request reaches its route, shows a
- *   progress job, and resumes the waiting sessions when it is ready (src/chat.mjs);
- * - slice 4 adds the /space command and the stop rules: idle, time limit with warning and
- *   extension, and cost as Hugging Face bills it (src/control.mjs);
- * - slice 5 shows precise start progress from the Space run log and checks each effort level
- *   with one request, which also warms the model (src/progress.mjs, src/chat.mjs);
- * - slice 6 serves the interface: local routes guarded by the Harness (src/web.mjs) for the
- *   header indicator and the toasts of the Client half (client/index.js).
+ * dsh-hf-spaces Host half:
+ * - each configured Hugging Face Space in the Harness model selector, with the open model name
+ *   and only the effort levels configured for it. Values come from the configuration, the Space
+ *   manifest and the Hugging Face API, in that order (docs/design.md, section 6);
+ * - a supervisor per Space that starts and pauses it (src/supervisor.mjs);
+ * - the chat gate: a request to a stopped Space starts it and resumes the waiting sessions when
+ *   it is ready (src/chat.mjs), with progress read from the Space run log (src/progress.mjs);
+ * - the /space command, the stop rules and the cost as Hugging Face bills it (src/control.mjs);
+ * - the plugin's records, billing usage and credential checks (src/account.mjs);
+ * - local routes guarded by the Harness (src/web.mjs) for the Client half (client/index.js):
+ *   header indicator, sidebar tab, toasts and the setup page.
  */
+import path from 'node:path';
 import Schema from '@deepseek-ai/schemastery';
 import * as piAiModule from '@deepseek-ai/dsh-llm-pi-ai';
 import { credentialRef } from '@deepseek-ai/dsh-credentials';
 import { HARNESS_LEVELS, normalizeConfig } from './config.mjs';
 import { HF_API, createHfClient } from './hf.mjs';
+import { LEDGER_FILE, attachAccount, createLedger, resolveStateDir } from './account.mjs';
 import { MANIFEST_FILE, effectiveSpace, parseManifest } from './manifest.mjs';
 import { attachChat } from './chat.mjs';
 import { attachControl } from './control.mjs';
@@ -44,11 +44,12 @@ export const Config = Schema.object({
   credentials: Schema.object({
     inference: Schema.string().default('HF_TOKEN').description('Vault credential NAME that reads the Space: model requests, Space API and manifest. Never a token value.'),
     control: Schema.string().default('HF_TOKEN').description('Vault credential NAME with write access to the Space, to start and stop it.'),
-    billing: Schema.string().default('HF_TOKEN').description('Vault credential NAME that reads billing, for cost and balance (later slice).'),
+    billing: Schema.string().default('HF_TOKEN').description('Vault credential NAME that reads the account billing, for the usage of each Space today and this month.'),
   }).default({}),
   locale: Schema.string().default('en').description('Language of the plugin messages in the chat: en or pt-BR.'),
   hfApiURL: Schema.string().default(HF_API).description('Hugging Face address. Change it only for offline tests on this machine.'),
   pollSeconds: Schema.number().default(5).description('Seconds between state reads while a Space starts or stops: 1 to 60.'),
+  stateDir: Schema.string().description('Folder of the plugin records (recent starts); a relative path is under the Harness home. Unset: <Harness home>/state/dsh-hf-spaces.'),
   spaces: Schema.array(Schema.object({
     id: Schema.string().description('Space id, owner/name. The only required field.'),
     label: Schema.string().description('Provider name in the model selector. Defaults to the Space name.'),
@@ -109,21 +110,28 @@ export function apply(ctx, config) {
     let api;
     let manifest;
     let readFailed = false;
+    // For the setup page: whether the Space and its manifest were read, and why not.
+    const checks = { api: 'not needed', manifest: 'not needed' };
     if (hf && (space.baseURL === undefined || space.models.length === 0)) {
       try {
         api = await hf.getSpace(space.id);
+        checks.api = 'read';
+        if (space.models.length === 0) checks.manifest = api.files.includes(MANIFEST_FILE) ? 'found' : 'absent';
         if (space.models.length === 0 && api.sha && api.files.includes(MANIFEST_FILE)) {
           const text = await hf.readSpaceFile(space.id, api.sha, MANIFEST_FILE);
           const parsed = text === undefined ? undefined : parseManifest(text);
-          if (parsed && 'problem' in parsed) log?.warn?.(`${space.id}: ${parsed.problem}`);
-          else if (parsed) manifest = parsed.manifest;
+          if (parsed && 'problem' in parsed) {
+            checks.manifest = parsed.problem;
+            log?.warn?.(`${space.id}: ${parsed.problem}`);
+          } else if (parsed) manifest = parsed.manifest;
         }
       } catch (error) {
         readFailed = true;
+        checks.api = error.message;
         log?.warn?.(`${space.id}: ${error.message}`);
       }
     }
-    return { ...effectiveSpace(space, api, manifest), readFailed };
+    return { ...effectiveSpace(space, api, manifest), readFailed, checks };
   };
 
   // Each Space's route lives in its own dsh-llm-pi-ai instance, so the profile's other routes do
@@ -176,13 +184,55 @@ export function apply(ctx, config) {
 
   /** route -> entry ({ key, label, facts, supervisor, chat state }) for every registered Space. */
   const supervisors = new Map();
+  const texts = textsFor(settings.locale);
+  const ledger = createLedger({ file: path.join(resolveStateDir(settings.stateDir), LEDGER_FILE), log });
+  const account = hf ? attachAccount({ hf, ledger, token, credentialNames: settings.credentials, log }) : undefined;
   const chat = hf
-    ? attachChat({ ctx, entries: supervisors, hf, texts: textsFor(settings.locale), token, credentialNames: settings.credentials, log, pollMs: settings.pollSeconds * 1000 })
+    ? attachChat({ ctx, entries: supervisors, hf, texts, token, credentialNames: settings.credentials, log, pollMs: settings.pollSeconds * 1000 })
     : undefined;
   const control = chat
-    ? attachControl({ ctx, entries: supervisors, chat, hf, texts: textsFor(settings.locale), locale: settings.locale, pollMs: settings.pollSeconds * 1000, log })
+    ? attachControl({ ctx, entries: supervisors, chat, account, texts, locale: settings.locale, pollMs: settings.pollSeconds * 1000, log })
     : undefined;
-  if (control) attachWeb({ ctx, control, locale: settings.locale, log });
+
+  /** route -> what the setup page shows: each effective value with its source, and what was read. */
+  const setup = new Map();
+  const setupOf = (space, result) => {
+    const base = { id: space.id, label: space.label, route: space.route, checks: result.checks };
+    if ('problem' in result) return { ...base, problem: result.problem };
+    const s = result.space;
+    return {
+      ...base,
+      values: {
+        baseURL: s.baseURL,
+        models: { value: s.models.value.map(m => ({ id: m.id, name: m.name, efforts: m.reasoning ? Object.keys(m.reasoning) : [] })), source: s.models.source },
+        ...(s.defaultEffort ? { defaultEffort: s.defaultEffort } : {}),
+        eventPrefix: s.eventPrefix,
+        ...(s.idleSeconds ? { sleepSeconds: s.idleSeconds } : {}),
+        hardware: s.hardware ?? null,
+        readyTimeoutMinutes: s.readyTimeoutMinutes,
+        automatic: s.automatic,
+        stop: s.stop,
+        startVariables: Object.keys(s.startVariables ?? {}),
+      },
+    };
+  };
+  const setupView = async () => ({
+    problems: settings.problems,
+    credentials: account ? await account.credentials() : [],
+    spaces: settings.spaces.map((space) => {
+      const view = setup.get(space.route) ?? { id: space.id, label: space.label, route: space.route, pending: true };
+      const entry = supervisors.get(space.route);
+      if (!entry) return view;
+      const key = JSON.stringify([entry.sha, entry.facts.models]);
+      return {
+        ...view,
+        phase: entry.supervisor.state().phase,
+        ...(entry.servedAt ? { servedAt: entry.servedAt } : {}),
+        efforts: entry.effortsChecked === key ? { checked: true, refused: entry.refusedEfforts ?? [] } : { checked: false },
+      };
+    }),
+  });
+  if (control) attachWeb({ ctx, control, setup: setupView, locale: settings.locale, log });
   const unsupervise = (route) => {
     const entry = supervisors.get(route);
     if (!entry) return;
@@ -207,13 +257,15 @@ export function apply(ctx, config) {
     const key = JSON.stringify(facts);
     const previous = supervisors.get(space.route);
     if (previous?.key === key) return;
-    const entry = { key, route: space.route, label: space.label, facts, sha: space.sha, sleepSeconds: space.idleSeconds?.value, readyUntil: 0, waiters: new Map(), progress: new Map() };
+    const entry = { key, route: space.route, label: space.label, facts, sha: space.sha, sleepSeconds: space.idleSeconds?.value, readyUntil: 0, waiters: new Map() };
     entry.supervisor = createSupervisor({
       space: facts,
       client: hf,
       pollMs: settings.pollSeconds * 1000,
       onChange: (state) => {
         log?.info?.(`${space.id}: ${describeState(state)}`);
+        if (state.phase === 'ready') entry.servedAt = Date.now(); // every configured model was listed
+        if (supervisors.get(space.route) === entry) account?.track(entry, state, texts);
         chat?.onState(entry);
       },
     });
@@ -233,6 +285,7 @@ export function apply(ctx, config) {
     await Promise.all(settings.spaces.map(async (space) => {
       const result = await resolveSpace(space);
       if (disposed || mine !== generation) return;
+      setup.set(space.route, setupOf(space, result));
       if ('problem' in result) {
         log?.warn?.(result.problem);
         if (!result.readFailed) { // a passing network error keeps what works
