@@ -26,9 +26,10 @@ you stop using it, so the GPU bills only while it is used.
 9. [Architecture](#architecture)
 10. [Security and privacy](#security-and-privacy)
 11. [Compatibility](#compatibility)
-12. [Roadmap](#roadmap)
-13. [Contributing](#contributing)
-14. [License](#license)
+12. [FAQ](#faq)
+13. [Roadmap](#roadmap)
+14. [Contributing](#contributing)
+15. [License](#license)
 
 ## What it does
 
@@ -174,14 +175,15 @@ does not match, and fix it before going on.
 **AI agents:** never ask for a token in the chat, and never write one to a file yourself. Step 3
 is the user's.
 
-1. **Get the package** (needs Node.js 22 or later and Git):
+1. **Get the package.** Download `dsh-hf-spaces-<version>.tgz` from the
+   [latest release](https://github.com/dev-bravelo/dsh-hf-spaces/releases), or build it from the
+   source (needs Node.js 22 or later and Git):
    ```bash
    git clone https://github.com/dev-bravelo/dsh-hf-spaces.git
    cd dsh-hf-spaces
    npm pack
    ```
-   You should see a file `dsh-hf-spaces-<version>.tgz` in the folder. There are no dependencies
-   to install.
+   You should have a file `dsh-hf-spaces-<version>.tgz`. There are no dependencies to install.
 
 2. **Install it in your Harness profile.** In a Harness session, ask the agent to install the
    bundle from that file with the plugin manager (`plugin_manager` → `install_bundle`, with the
@@ -310,6 +312,72 @@ Each release states the Harness versions it was tested on and how it was tested.
   drops one (for example the right sidebar), only that part is missing; the rest keeps working.
 
 How the plugin is kept compatible is a contributor rule: [AGENTS.md, section 7](AGENTS.md#7-compatibility-with-harness-updates).
+
+## FAQ
+
+### How do I use my own open-weight LLM in DeepSeek Harness?
+
+Serve it from a GPU Hugging Face Space with an OpenAI-compatible server (for example llama.cpp
+`llama-server`), install this plugin, and add the Space id to your profile
+([Installation](#installation)). The model then appears in the Harness model selector like any
+other model.
+
+### Can I run an uncensored or abliterated model this way?
+
+Yes. You choose the weights your Space serves, including fine-tunes with fewer built-in
+refusals, as long as the model's license and the Hugging Face terms allow your use. Read
+[Responsible use](#responsible-use) first.
+
+### How do I stop paying for an idle Hugging Face GPU Space?
+
+The plugin pauses the Space after 30 minutes without requests, at a 60-minute limit per start
+(both configurable, the limit can be extended), and when you press Stop or send `/space off`. A
+paused Space is not billed. When the Harness is closed, only the Space's own sleep time stops it.
+
+### How much does it cost?
+
+Hugging Face bills the GPU per started minute while the Space starts and runs: an A100 large is
+US$ 2.50 per hour ([pricing](https://huggingface.co/pricing), read on 2026-10-31). A real
+18-minute session with a 27B model cost about US$ 0.75. The plugin shows the cost of each start
+and what the Space was billed today and this month.
+
+### Do I need the Hugging Face PRO plan?
+
+Hugging Face requires a paid plan for Docker or Gradio Spaces on GPU, and PRO also raises the
+storage for your weights. See [Requirements](#requirements).
+
+### How long does a cold start take?
+
+About 3 minutes for a 27B model on an A100: the GPU starts, the weights are copied from a storage
+bucket, loaded, and warmed up. The progress shows in the conversation header. A GPU queue on
+Hugging Face can add time.
+
+### Are my prompts and my model private?
+
+A private Space can be called only with a token that can read it. The plugin sends your requests
+only to your Space and to the Hugging Face API, with no telemetry. Hugging Face runs the machine,
+so its [Privacy Policy](https://huggingface.co/privacy) applies there.
+
+### Which servers and models work?
+
+Any server with an OpenAI-compatible API (`GET /v1/models`, `POST /v1/chat/completions`).
+Tested with llama.cpp `llama-server` serving a 27B GGUF model on an A100.
+
+### Does it show my Hugging Face balance?
+
+No. Hugging Face does not expose the balance through its API; check it on your billing page. The
+plugin shows what was billed instead.
+
+### Can an AI agent install it for me?
+
+Yes. [Installation](#installation) is written for agents too, with expected results and stop
+conditions. The token step is always yours: an agent must never ask for a token in the chat.
+
+### Will a DeepSeek Harness update break it?
+
+Within the supported version range it keeps working; outside it, the Harness refuses to load it
+and says so, instead of failing in the middle of a conversation. See
+[Compatibility](#compatibility).
 
 ## Roadmap
 

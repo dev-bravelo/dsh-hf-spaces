@@ -6,6 +6,15 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added (public repository, 2026-10-31)
+
+- **README:** the flow end to end, open models, responsible-use terms, step-by-step installation,
+  and a FAQ written as people ask (own model in DeepSeek Harness, uncensored models, idle GPU
+  cost, cold start, privacy, balance, agents, updates).
+- **Discoverability:** 20 GitHub topics, `homepage`, `bugs` and more `keywords` in
+  `package.json`, and the package attached to each GitHub release, so it installs without
+  building it.
+
 ### Changed (interface redesign, 0.1.0-alpha.8, after the first Desktop test)
 
 - **Header indicator: one short line.** The whole progress sentence and three buttons overflowed

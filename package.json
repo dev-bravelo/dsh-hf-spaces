@@ -9,6 +9,10 @@
     "type": "git",
     "url": "git+https://github.com/dev-bravelo/dsh-hf-spaces.git"
   },
+  "homepage": "https://github.com/dev-bravelo/dsh-hf-spaces#readme",
+  "bugs": {
+    "url": "https://github.com/dev-bravelo/dsh-hf-spaces/issues"
+  },
   "keywords": [
     "deepseek-harness",
     "dsh",
@@ -17,7 +21,17 @@
     "huggingface-spaces",
     "llm",
     "llama.cpp",
-    "openai-compatible"
+    "openai-compatible",
+    "deepseek",
+    "huggingface",
+    "self-hosted-llm",
+    "llm-inference",
+    "open-weights",
+    "uncensored-llm",
+    "gguf",
+    "gpu",
+    "model-serving",
+    "ai-agents"
   ],
   "main": "./src/index.mjs",
   "exports": {
