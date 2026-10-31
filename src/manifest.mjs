@@ -84,6 +84,8 @@ export function effectiveSpace(space, api, manifest) {
       eventPrefix,
       ...(idleSeconds ? { idleSeconds } : {}),
       ...(api?.sha ? { sha: api.sha } : {}),
+      ...(space.hardware ? { hardware: space.hardware } : {}),
+      readyTimeoutMinutes: space.readyTimeoutMinutes,
     },
   };
 }

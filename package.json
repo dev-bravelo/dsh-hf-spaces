@@ -1,6 +1,6 @@
 {
   "name": "dsh-hf-spaces",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "private": true,
   "description": "DeepSeek Harness plugin: use an LLM served from a GPU Hugging Face Space, started on demand and stopped when idle, with live progress, cost and balance in the Harness UI. Pre-alpha.",
   "license": "MIT",

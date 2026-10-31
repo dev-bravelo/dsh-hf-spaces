@@ -8,9 +8,19 @@ const seen = [];
 let server;
 let base;
 before(async () => {
-  server = http.createServer((req, res) => {
-    seen.push({ url: req.url, auth: req.headers.authorization });
-    const json = (status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+  server = http.createServer(async (req, res) => {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    await new Promise(resolve => req.on('end', resolve));
+    seen.push({ method: req.method, url: req.url, auth: req.headers.authorization, body });
+    const json = (status, payload) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(payload)); };
+    const runtime = { stage: 'APP_STARTING', hardware: { current: null, requested: 'a100-large' }, gcTimeout: 3600 };
+    if (req.url === '/api/spaces/your-user/your-llm-space/runtime') return json(200, { ...runtime, stage: 'RUNTIME_ERROR', errorMessage: 'CUDA out of memory' });
+    if (req.method === 'POST' && req.url === '/api/spaces/your-user/your-llm-space/restart') return json(200, runtime);
+    if (req.method === 'POST' && req.url === '/api/spaces/your-user/your-llm-space/pause') return json(200, { ...runtime, stage: 'PAUSED' });
+    if (req.method === 'POST' && req.url === '/api/spaces/your-user/your-llm-space/hardware') return json(200, { ...runtime, hardware: { current: null, requested: JSON.parse(body).flavor } });
+    if (req.method === 'POST' && req.url === '/api/spaces/your-user/not-mine/pause') return json(403, { error: 'forbidden' });
+    if (req.url === '/v1/models') return json(200, { object: 'list', data: [{ id: 'open-model-q6' }, { id: 'second' }] });
     if (req.url === '/api/spaces/your-user/your-llm-space') {
       return json(200, {
         id: 'your-user/your-llm-space', sha: 'abc123', host: `${base}`,
@@ -32,6 +42,31 @@ before(async () => {
 after(() => server.close());
 
 const client = (token = 'test-token') => createHfClient({ apiURL: base, getToken: async () => token });
+/** Each credential kind gets its own fake token, to prove which one a request used. */
+const byKind = () => createHfClient({ apiURL: base, getToken: async kind => `${kind}-token` });
+
+test('runtime: stage, hardware and error message, read with the inference credential', async () => {
+  const runtime = await byKind().getRuntime('your-user/your-llm-space');
+  assert.deepEqual(runtime, { stage: 'RUNTIME_ERROR', current: null, requested: 'a100-large', gcTimeout: 3600, error: 'CUDA out of memory' });
+  assert.equal(seen.at(-1).auth, 'Bearer inference-token');
+});
+
+test('start, pause and hardware are POSTs with the control credential', async () => {
+  const hf = byKind();
+  assert.equal((await hf.restart('your-user/your-llm-space')).stage, 'APP_STARTING');
+  assert.deepEqual([seen.at(-1).method, seen.at(-1).auth], ['POST', 'Bearer control-token']);
+  assert.equal((await hf.pause('your-user/your-llm-space')).stage, 'PAUSED');
+  assert.equal((await hf.requestHardware('your-user/your-llm-space', 'l40sx1')).requested, 'l40sx1');
+  assert.deepEqual(JSON.parse(seen.at(-1).body), { flavor: 'l40sx1' });
+  await assert.rejects(hf.pause('your-user/not-mine'), /HTTP 403 \(the control credential cannot change this Space; it needs write access and the Space owner\)/);
+});
+
+test('served models: read from the Space address only, with the inference credential', async () => {
+  assert.deepEqual(await byKind().listServedModels(`${base}/v1`), ['open-model-q6', 'second']);
+  assert.equal(seen.at(-1).auth, 'Bearer inference-token');
+  const real = createHfClient({ getToken: async () => 'must-not-leave' });
+  await assert.rejects(real.listServedModels('https://proxy.example.com/v1'), /must be https:\/\/<subdomain>\.hf\.space/);
+});
 
 test('reads what the plugin needs from the Space API, with the token', async () => {
   const space = await client().getSpace('your-user/your-llm-space');

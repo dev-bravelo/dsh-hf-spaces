@@ -90,7 +90,9 @@ if (!root) {
       assert.deepEqual(info.reasoning.efforts.map(e => e.id), ['off', 'low', 'medium', 'xhigh']);
       assert.equal(info.reasoning.defaultEffort, 'medium');
       assert.equal(info.context.contextWindow, 131072);
-      assert.equal(seen.length, readsBefore, 'everything was configured, so nothing was read from Hugging Face');
+      // Everything was configured, so only the supervisor's state read (GET /runtime) reaches Hugging Face.
+      const reads = seen.slice(readsBefore).map(r => r.url);
+      assert.ok(reads.every(url => url === '/api/spaces/your-user/configured/runtime'), reads.join(', '));
     } finally {
       dispose();
     }

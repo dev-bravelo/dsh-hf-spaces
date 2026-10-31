@@ -6,6 +6,37 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added (Phase 1, slice 2: start and pause a Space, 0.1.0-alpha.2)
+
+- **Space supervisor** (`src/supervisor.mjs`, no Harness imports): states off, starting, ready,
+  stopping and failed.
+  - **Start:** a paused Space is restarted, or moved to the configured `hardware` when it differs
+    (Hugging Face restarts it there). Two starts at once share one.
+  - **Ready** only when the Space's own `GET /v1/models` lists every configured model. A server
+    that lists other models fails at once, with the fix.
+  - **Safety:** a start that reports an error stage, or is not ready after
+    `start.readyTimeoutMinutes` (default 15), pauses the Space, but only when this start began
+    it; a Space started elsewhere is reported and left as it is. A credential the Space refuses
+    ends the wait at once instead of billing until the timeout.
+  - **Never stale:** every start reads the Space again, so a Space paused on the web or asleep
+    after its sleep time is started again.
+  - **Stop:** pauses and waits for Hugging Face to confirm (stopped stage, no hardware). An
+    unconfirmed pause, or a refused pause request, is reported as a possible cost, never as "off".
+    A stop cancels a start and wins over it. An already paused Space is not paused again.
+- **Hugging Face client:** Space state, restart, pause and hardware change. Reads use the
+  inference credential; start, pause and hardware use the control credential. The model list is
+  read only from the Space's own address.
+- **Plugin:** each registered Space gets a supervisor that reads and logs its state at startup.
+  Starting from the chat comes in slice 3.
+- **Configuration limits** are checked per Space, not in the schema, so one bad value refuses
+  that Space instead of the whole plugin. Error messages say what to do next.
+- **Tests:** 20 supervisor tests on a fake clock (minutes of waiting run in milliseconds), 3 more
+  Hugging Face client tests and 1 configuration test.
+- **Code review of the slice:** 13 findings, all fixed. One more defect surfaced while testing
+  the fixes: a stop asked during a state change repeated itself without end; the operation is
+  now recorded before it runs. Real Hugging Face calls are still
+  unverified from Node; that comes with the real-start test at the end of Phase 1.
+
 ### Added (Phase 1, slice 1: Spaces in the model selector, 0.1.0-alpha.1)
 
 - The package is a Harness bundle: `engines.dsh` `>=0.2.1-rc.3 <0.3.0-0`, Harness packages as

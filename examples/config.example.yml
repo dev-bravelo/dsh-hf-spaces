@@ -15,7 +15,8 @@ spaces:
     label: My LLM                      # name in the model selector and in the indicator
     route: my-llm                      # provider id stored in sessions; keep it stable (see docs/design.md, section 6)
     # baseURL: https://your-space-host.hf.space/v1   # optional; by default read from the Space API (host)
-    # hardware and hourly price are read from Hugging Face when available
+    # hardware: a100-large             # optional: start on this hardware; unset keeps the Space's own
+    # the hourly price is read from Hugging Face
     # models: optional when the Space has a dsh-hf-spaces.json manifest (docs/design.md, section 6);
     # values set here override the manifest.
     models:

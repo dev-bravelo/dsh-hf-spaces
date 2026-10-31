@@ -5,7 +5,7 @@ started on demand, stopped when idle, with live progress, cost and balance shown
 Harness interface.
 
 > **Status: pre-alpha, Phase 1 in progress.** The plugin already puts configured Spaces in the
-> model selector, but it does not start or stop them yet. Do not install it. The design is in [docs/design.md](docs/design.md); progress is tracked in
+> model selector and can start and pause them, but nothing in the chat starts them yet. Do not install it. The design is in [docs/design.md](docs/design.md); progress is tracked in
 > [CHANGELOG.md](CHANGELOG.md).
 
 ## Contents
@@ -111,7 +111,7 @@ section 4.
 
 | Plugin | DeepSeek Harness | Status |
 |---|---|---|
-| 0.1.0-alpha.1 (unreleased) | 0.2.1-rc.3 | Phase 1, slice 1: Spaces in the model selector. 38 offline tests, and 5 runtime tests on the installed Harness, on Windows, 2026-10-30. No start or stop yet |
+| 0.1.0-alpha.2 (unreleased) | 0.2.1-rc.3 | Phase 1, slices 1 and 2: Spaces in the model selector, and a supervisor that starts and pauses them. 62 offline tests and 5 runtime tests on the installed Harness, Windows, 2026-10-31. Not tested against a real Space yet; nothing in the chat starts a Space yet |
 
 Each release will state the Harness versions it was tested on and how it was tested.
 

@@ -13,7 +13,11 @@ export const PREFERRED_DEFAULT_EFFORT = 'medium';
 export const DEFAULTS = Object.freeze({
   credentials: Object.freeze({ inference: 'HF_TOKEN', control: 'HF_TOKEN', billing: 'HF_TOKEN' }),
   eventPrefix: 'SPACE_EVENT',
+  // A cold start of a 27B model on an A100 took 3.7 min on 2026-10-30; a GPU queue adds more.
+  readyTimeoutMinutes: 15,
 });
+const READY_TIMEOUT_MAX = 120;
+const HARDWARE_FLAVOR = /^[a-z0-9][a-z0-9-]*$/;
 
 const SPACE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 // A hand-declared pi-ai route id is a lowercase hyphenated identifier (dsh-llm-pi-ai README).
@@ -164,6 +168,15 @@ export function normalizeConfig(raw = {}) {
       problems.push(`${where}: defaultEffort "${entry.defaultEffort}" is not a Harness level; use ${HARNESS_LEVELS.join(', ')}`);
       continue;
     }
+    if (entry.hardware !== undefined && (typeof entry.hardware !== 'string' || !HARDWARE_FLAVOR.test(entry.hardware))) {
+      problems.push(`${where}: hardware "${entry.hardware}" is not a Hugging Face hardware name, such as a100-large or l40sx1`);
+      continue;
+    }
+    const readyTimeoutMinutes = entry.start?.readyTimeoutMinutes ?? DEFAULTS.readyTimeoutMinutes;
+    if (!Number.isSafeInteger(readyTimeoutMinutes) || readyTimeoutMinutes < 1 || readyTimeoutMinutes > READY_TIMEOUT_MAX) {
+      problems.push(`${where}: start.readyTimeoutMinutes must be a whole number from 1 to ${READY_TIMEOUT_MAX}`);
+      continue;
+    }
     routes.add(route);
     spaces.push({
       id,
@@ -173,6 +186,8 @@ export function normalizeConfig(raw = {}) {
       models: listed.models,
       ...(entry.defaultEffort === undefined ? {} : { defaultEffort: entry.defaultEffort }),
       ...(typeof entry.progress?.eventPrefix === 'string' && entry.progress.eventPrefix ? { eventPrefix: entry.progress.eventPrefix } : {}),
+      ...(entry.hardware === undefined ? {} : { hardware: entry.hardware }),
+      readyTimeoutMinutes,
     });
   }
   return { credentials, spaces, problems };

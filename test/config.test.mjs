@@ -92,6 +92,19 @@ test('model: name defaults to id, sizes must be positive whole numbers', () => {
   assert.equal(problems.length, 2);
 });
 
+test('start options: hardware name and ready timeout, with a 15 min default', () => {
+  const ok = normalizeConfig({ spaces: [space({ hardware: 'a100-large', start: { readyTimeoutMinutes: 20 } }), space({ id: 'your-user/second' })] });
+  assert.deepEqual(ok.problems, []);
+  assert.equal(ok.spaces[0].hardware, 'a100-large');
+  assert.equal(ok.spaces[0].readyTimeoutMinutes, 20);
+  assert.equal(ok.spaces[1].readyTimeoutMinutes, 15);
+  assert.equal('hardware' in ok.spaces[1], false);
+  const bad = normalizeConfig({ spaces: [space({ hardware: 'A100 Large' }), space({ id: 'your-user/b', start: { readyTimeoutMinutes: 0 } })] });
+  assert.equal(bad.spaces.length, 0);
+  assert.match(bad.problems[0], /hardware "A100 Large" is not a Hugging Face hardware name/);
+  assert.match(bad.problems[1], /readyTimeoutMinutes must be a whole number from 1 to 120/);
+});
+
 test('defaultEffort must be a Harness level', () => {
   const { spaces, problems } = normalizeConfig({ spaces: [space({ defaultEffort: 'turbo' })] });
   assert.equal(spaces.length, 0);

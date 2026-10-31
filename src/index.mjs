@@ -1,8 +1,10 @@
 /**
- * dsh-hf-spaces Host half, Phase 1 slice 1: puts each configured Hugging Face Space in the
- * Harness model selector, with the open model name and only the effort levels configured for it.
- * Values come from the configuration, the Space manifest and the Hugging Face API, in that
- * order (docs/design.md, section 6). Starting and stopping Spaces comes in a later slice.
+ * dsh-hf-spaces Host half, Phase 1:
+ * - slice 1 puts each configured Hugging Face Space in the Harness model selector, with the open
+ *   model name and only the effort levels configured for it. Values come from the configuration,
+ *   the Space manifest and the Hugging Face API, in that order (docs/design.md, section 6);
+ * - slice 2 gives each registered Space a supervisor that can start and pause it. Here it only
+ *   reads and logs the Space state; starting from the chat comes in slice 3.
  */
 import Schema from '@deepseek-ai/schemastery';
 import * as piAiModule from '@deepseek-ai/dsh-llm-pi-ai';
@@ -11,15 +13,18 @@ import { HARNESS_LEVELS, normalizeConfig } from './config.mjs';
 import { HF_API, createHfClient } from './hf.mjs';
 import { MANIFEST_FILE, effectiveSpace, parseManifest } from './manifest.mjs';
 import { buildProviders, describeSpace } from './route.mjs';
+import { createSupervisor, describeState } from './supervisor.mjs';
 
 export const name = 'hf-spaces';
 export const inject = ['llm'];
 
+// Limits are checked per Space in config.mjs, not in the schema: a schema error would reject the
+// whole configuration, and every Space with it.
 const Model = Schema.object({
   id: Schema.string().description('Model id, exactly as the Space lists it in GET /v1/models.'),
   name: Schema.string().description('The open model name shown in the model selector. Defaults to the id.'),
-  contextWindow: Schema.number().step(1).min(1).description('Context window in tokens. Unset: the route fallback (262,144).'),
-  maxTokens: Schema.number().step(1).min(1).description('Output cap in tokens. Unset: the route fallback (32,768).'),
+  contextWindow: Schema.number().description('Context window in tokens. Unset: the route fallback (262,144).'),
+  maxTokens: Schema.number().description('Output cap in tokens. Unset: the route fallback (32,768).'),
   reasoning: Schema.union([Schema.const(false), Schema.dict(Schema.string())])
     .description(`Effort levels the selector offers: Harness level (${HARNESS_LEVELS.join(', ')}) -> value the server accepts. false: no effort control.`),
 });
@@ -35,7 +40,11 @@ export const Config = Schema.object({
     id: Schema.string().description('Space id, owner/name. The only required field.'),
     label: Schema.string().description('Provider name in the model selector. Defaults to the Space name.'),
     route: Schema.string().description('Provider id saved in sessions: lowercase letters, digits and hyphens, up to 32. Keep it stable. Defaults to the label.'),
-    baseURL: Schema.string().description('OpenAI-compatible address of the Space. Unset: read from Hugging Face.'),
+    baseURL: Schema.string().description('OpenAI-compatible address of the Space, https://<subdomain>.hf.space/v1. Unset: read from Hugging Face.'),
+    hardware: Schema.string().description('Hardware to start on, such as a100-large. Unset: the hardware the Space already has.'),
+    start: Schema.object({
+      readyTimeoutMinutes: Schema.number().description('Give up and pause the Space if it is not ready after this many minutes: 1 to 120, default 15.'),
+    }),
     defaultEffort: Schema.string().description('Effort the selector starts on. Unset: medium when every model lists it.'),
     models: Schema.array(Model).description(`Models served. Unset: read from ${MANIFEST_FILE} in the Space repository.`),
     progress: Schema.object({ eventPrefix: Schema.string().description('Prefix of the progress lines in the Space run log.') }),
@@ -56,9 +65,10 @@ export function apply(ctx, config) {
 
   // Read at request time, not at startup: the credential service may start after this plugin.
   // It already falls back to the launching environment, so nothing else is read here.
-  const token = async () => {
+  /** @param kind - 'inference' for reads and model requests, 'control' to start and stop */
+  const token = async (kind = 'inference') => {
     try {
-      return cleanToken((await ctx.get('credentials')?.resolve(credentialRef(settings.credentials.inference)))?.value);
+      return cleanToken((await ctx.get('credentials')?.resolve(credentialRef(settings.credentials[kind])))?.value);
     } catch {
       return undefined; // vault absent or locked
     }
@@ -143,6 +153,29 @@ export function apply(ctx, config) {
     }
   };
 
+  /** route -> { key, supervisor } for every registered Space. */
+  const supervisors = new Map();
+  const unsupervise = (route) => {
+    supervisors.get(route)?.supervisor.dispose(); // stops watching; the Space is left as it is
+    supervisors.delete(route);
+  };
+  const supervise = (space) => {
+    if (!hf) return;
+    const facts = {
+      id: space.id,
+      baseURL: space.baseURL.value,
+      modelIds: space.models.value.map(m => m.id),
+      ...(space.hardware ? { hardware: space.hardware } : {}),
+      readyTimeoutMinutes: space.readyTimeoutMinutes,
+    };
+    const key = JSON.stringify(facts);
+    if (supervisors.get(space.route)?.key === key) return;
+    unsupervise(space.route);
+    const supervisor = createSupervisor({ space: facts, client: hf, onChange: state => log?.info?.(`${space.id}: ${describeState(state)}`) });
+    supervisors.set(space.route, { key, supervisor });
+    supervisor.check().catch(error => log?.warn?.(`${space.id}: state not read: ${error?.message ?? error}`));
+  };
+
   let generation = 0;
   let disposed = false;
   /** Builds every Space's route again, in parallel; a newer call wins over an older one. */
@@ -153,9 +186,14 @@ export function apply(ctx, config) {
       if (disposed || mine !== generation) return;
       if ('problem' in result) {
         log?.warn?.(result.problem);
-        if (!result.readFailed) unmount(space.route); // a passing network error keeps what works
+        if (!result.readFailed) { // a passing network error keeps what works
+          unmount(space.route);
+          unsupervise(space.route);
+        }
       } else {
         await mount(result.space);
+        if (mounted.has(space.route)) supervise(result.space);
+        else unsupervise(space.route);
       }
     }));
   };
@@ -172,6 +210,7 @@ export function apply(ctx, config) {
   ctx.effect(() => () => {
     disposed = true;
     clearTimeout(timer);
+    for (const route of [...supervisors.keys()]) unsupervise(route);
   });
   schedule();
   // When the credential service starts after this plugin, read Hugging Face again with it.

@@ -101,8 +101,8 @@ States: `off` → `starting(stage, percent, secondsLeft)` → `ready` → `stopp
 | Transition | Trigger |
 |---|---|
 | off → starting | Model request with `start.automatic`, or the Start button |
-| starting → ready | `GET /v1/models` lists the configured model, and the optional warm-up finished |
-| starting → failed → stopping | Start failed, or `readyTimeoutMinutes` passed. The plugin pauses the Space so it does not bill without serving |
+| starting → ready | `GET /v1/models` on the Space lists every configured model, and the optional warm-up finished. A server that answers with other models is a configuration error and fails at once |
+| starting → stopping → failed | The Space reported an error stage, or `start.readyTimeoutMinutes` passed. The plugin pauses the Space so it does not bill without serving, and the failure says whether the pause was confirmed |
 | ready → stopping | Idle for `idleMinutes`, or the time limit was reached, or Stop was pressed |
 | stopping → off | Pause confirmed by the runtime API (stage `PAUSED`, no hardware) |
 
