@@ -6,7 +6,36 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
-### Added
+### Added (Phase 1, slice 1: Spaces in the model selector, 0.1.0-alpha.1)
+
+- The package is a Harness bundle: `engines.dsh` `>=0.2.1-rc.3 <0.3.0-0`, Harness packages as
+  peers, and a default `cordis.patch.yml` row with no Space.
+- **Configuration** (`src/config.mjs`): only the Space id is required. Route from the label,
+  credential names (never values), `baseURL` https only, ordered reasoning levels. A bad Space or
+  model is refused alone, with the fix in the message.
+- **Space manifest** (`src/manifest.mjs`): `dsh-hf-spaces.json` read while the Space is stopped,
+  and one effective value per field in the order configuration, manifest, Hugging Face API,
+  default, each tagged with its source.
+- **Hugging Face client** (`src/hf.mjs`): Space info and repository files, tokens only to
+  huggingface.co (or this machine in tests), no redirect followed with a token, Space files
+  capped at 64 KiB.
+- **Model selector** (`src/route.mjs`, `src/index.mjs`): one provider route per Space, each in
+  its own `dsh-llm-pi-ai` instance, so a problem with one Space never removes another. A route
+  another provider already serves is refused for that Space alone. Spaces are read in parallel,
+  and startup reads Hugging Face once. Routes carry the open model name, the effort levels in
+  order and `medium` as the default effort when every model lists it. Reuses the Harness's own
+  adapter instead of new wire code.
+- **Credentials:** read only through the Harness credential service, which already falls back to
+  the launching environment. `baseURL` must be a Space address (`https://<subdomain>.hf.space`),
+  because the inference token is sent there. A token pasted where a credential name belongs is
+  refused, and the message does not repeat it.
+- **Tests:** 27 offline tests for the new modules, plus 5 runtime tests on the installed Harness
+  0.2.1-rc.3 (admission, model list and effort levels, Space id only with a manifest, a taken
+  route refused alone, routes removed on dispose). Windows, 2026-10-30.
+- **Code review of the slice:** 14 findings; 13 fixed, 1 kept as a documented risk (the
+  no-op wrappers over pi-ai's internal registrations, docs/contracts.md).
+
+### Added (scaffold and design)
 
 - Repository scaffold:
   - README, instructions for AI agents and contributors (`AGENTS.md`), `llms.txt`;

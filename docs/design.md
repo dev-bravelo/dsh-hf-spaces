@@ -332,9 +332,10 @@ on the Harness 0.2.x line. Lessons, all verified:
 - ~~Is the hourly price of each hardware readable from a public Hugging Face endpoint?~~
   Yes, settled in Phase 0: `GET /api/spaces/hardware` ([contracts.md](contracts.md)). A
   configured price is only an override.
-- Which effort level does the selector pick by default when the user picks the model? The
-  model-selection README speaks of "the selected model's default effort" without saying how it is
-  chosen. A runtime test in Phase 1 answers it; `medium`, when listed, is the wanted default.
+- ~~Which effort level does the selector pick by default when the user picks the model?~~
+  Settled in Phase 1: the route's `reasoning` field sets the model's `defaultEffort`. The plugin
+  sets `medium` when every model of the Space lists it, or the configured `defaultEffort`
+  (runtime test, 2026-10-30).
 - ~~Does the Harness plugin settings page render the configuration schema with descriptions?~~
   No, settled in Phase 0: a plugin registers its own page ([contracts.md](contracts.md)).
 - Should a reference Space template (llama.cpp, bucket volume, `SPACE_EVENT` lines, a

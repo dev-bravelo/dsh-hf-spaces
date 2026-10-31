@@ -89,7 +89,10 @@ the Space on demand and stopping it when idle.
 | `scripts/check-secrets.mjs` | Secret and personal-data scanner (no dependencies) |
 | `.githooks/pre-commit` | Runs the scanner on staged files and the commit identity |
 | `.githooks/commit-msg` | Runs the scanner on the commit message |
-| `test/` | Offline tests (`node:test`) |
+| `src/` | Plugin code. `config.mjs`, `manifest.mjs`, `route.mjs` and `hf.mjs` have no Harness imports and run under plain `node --test`; `index.mjs` wires them into the Harness |
+| `cordis.patch.yml` | The bundle's default row: no Space, so nothing is registered |
+| `test/*.test.mjs` | Tests (`node:test`). `runtime.test.mjs` needs an installed Harness and is skipped otherwise |
+| `test/runtime-loader.mjs` | Mounts the plugin on the installed Harness for the runtime tests |
 | `llms.txt` | Short index of this repository for language models |
 
 ## 4. Commands
@@ -98,7 +101,8 @@ the Space on demand and stopping it when idle.
 |---|---|
 | `npm run hooks` | Points git to `.githooks/` (run once per clone). The hooks are committed as executable |
 | `npm run check` | Secret and personal-data scan of tracked and new (not git-ignored) files, then tests |
-| `npm test` | Tests only |
+| `npm test` | Tests only (`test/*.test.mjs`) |
+| `ELECTRON_RUN_AS_NODE=1 DSH_TEST_RUNTIME_ROOT=<app>/resources/app.asar/dsh <app executable> --test test/runtime.test.mjs` | Runtime tests on the installed Harness (section 6) |
 | `node scripts/check-secrets.mjs --staged` | Scan staged files and the commit identity (the pre-commit hook does this) |
 | `node scripts/check-secrets.mjs --message <file>` | Scan a commit message (the commit-msg hook does this) |
 

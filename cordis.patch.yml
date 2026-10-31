@@ -1,0 +1,12 @@
+# dsh-hf-spaces: one row, no Space configured, so the plugin loads and registers nothing.
+# Add your Spaces in your profile's patch (see examples/config.example.yml and docs/design.md).
+# Credentials are vault credential NAMES, never token values.
+- insert:
+    - id: hf-spaces
+      name: dsh-hf-spaces
+      config:
+        credentials:
+          inference: HF_TOKEN
+          control: HF_TOKEN
+          billing: HF_TOKEN
+        spaces: []

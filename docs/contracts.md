@@ -165,6 +165,21 @@ Nothing in this section was run in Phase 0, so every item is **Read** unless mar
 **Verified on 2026-10-30, Desktop 0.2.1-rc.3, with the private prototype:** a route built the
 same way showed the model name and the effort "Medium" in the composer.
 
+**Default effort, verified on 2026-10-30 by this plugin's runtime test:** the route's `reasoning`
+field (pi-ai) becomes the model's `reasoning.defaultEffort`. `ctx.llm.listModels(route)` and
+`ctx.llm.resolveModelInfo(route, model)` return what the selector shows: name, ordered effort
+ids, default effort and context window.
+
+**Registering routes from a plugin.** The plugin mounts one `dsh-llm-pi-ai` instance per Space. pi-ai
+also publishes three process-wide registries (configurable-provider directory, model discovery,
+sign-in flows) that the profile's main instance owns, and a second copy collides ("configurable
+provider ... is already declared"). Its instances therefore see no-op versions of
+`registerConfigurableProviders`, `registerModelDiscovery` and `authorization.registerFlow`.
+- **Evidence:** used by the private prototype since 2026-10-19 on 0.2.1-rc.2 and rc.3. This
+  plugin's runtime test shows routes registered, listed and removed on dispose.
+- **Risk:** these three names are internal to pi-ai. A Harness update that renames them breaks
+  registration, and the runtime test catches it (AGENTS.md, section 7).
+
 **Verified on 2026-09-21, on the prototype's Space:** its llama.cpp Qwen chat template answered
 HTTP 500 to the efforts `minimal`, `high` and `max`, and accepted `none`, `low`, `medium` and
 `xhigh`. Unsupported levels are rejected visibly, not ignored, so the plugin can check them.
@@ -236,7 +251,6 @@ Each open item says whose limit it is and what would settle it.
 | A second registrant on a single slot | Ours: not tested | Avoided by design: the plugin uses list and keyed slots only |
 | `EventSource` over the `dsh-app://` scheme | Ours: not tested | Not needed: the Client reads the stream with `fetch` |
 | `dsh.client.immediately` | Provider: set in the official template, not documented | Leave it as the template sets it |
-| How the selector picks the default effort of a model | Provider: not documented | A runtime test in Phase 1 |
 | Whether every chat template rejects an unknown effort (HTTP 500), or some ignore it | Ours: seen on one llama.cpp Qwen template only | The effort check of each new Space, in Phase 1 |
 
 Settled in Phase 0 as provider behavior:
