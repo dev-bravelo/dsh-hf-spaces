@@ -8,7 +8,9 @@ All notable changes are listed here. The format follows
 
 ### Added (public repository, 2026-10-31)
 
-- **README:** the flow end to end, open models, responsible-use terms, step-by-step installation,
+- **README:** what the user sets up on Hugging Face (hardware, inference engine, weights, sleep
+  time) and what the plugin does, with the engine requirements; the flow end to end, open
+  models, responsible-use terms, step-by-step installation,
   and a FAQ written as people ask (own model in DeepSeek Harness, uncensored models, idle GPU
   cost, cold start, privacy, balance, agents, updates).
 - **Discoverability:** 20 GitHub topics, `homepage`, `bugs` and more `keywords` in

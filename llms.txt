@@ -6,7 +6,9 @@
 > conversation header, and is paused when idle or at a time limit, so the GPU bills only while
 > used. The user chooses the weights, including models with fewer refusals; the plugin adds no
 > content filter, and its README sets the responsible-use terms. Credentials are referenced by
-> name, never stored in configuration and never asked for in a chat.
+> name, never stored in configuration and never asked for in a chat. The user builds the Space
+> (GPU hardware, OpenAI-compatible inference engine such as llama.cpp, weights, sleep time); the
+> plugin starts, watches, uses and pauses it.
 
 ## Start here
 

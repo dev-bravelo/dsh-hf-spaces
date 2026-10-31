@@ -18,18 +18,19 @@ you stop using it, so the GPU bills only while it is used.
 1. [What it does](#what-it-does)
 2. [The flow, end to end](#the-flow-end-to-end)
 3. [Open models, your weights](#open-models-your-weights)
-4. [Responsible use](#responsible-use)
-5. [Requirements](#requirements)
-6. [Installation](#installation)
-7. [Credentials](#credentials)
-8. [Configuration](#configuration)
-9. [Architecture](#architecture)
-10. [Security and privacy](#security-and-privacy)
-11. [Compatibility](#compatibility)
-12. [FAQ](#faq)
-13. [Roadmap](#roadmap)
-14. [Contributing](#contributing)
-15. [License](#license)
+4. [What you set up, and what the plugin does](#what-you-set-up-and-what-the-plugin-does)
+5. [Responsible use](#responsible-use)
+6. [Requirements](#requirements)
+7. [Installation](#installation)
+8. [Credentials](#credentials)
+9. [Configuration](#configuration)
+10. [Architecture](#architecture)
+11. [Security and privacy](#security-and-privacy)
+12. [Compatibility](#compatibility)
+13. [FAQ](#faq)
+14. [Roadmap](#roadmap)
+15. [Contributing](#contributing)
+16. [License](#license)
 
 ## What it does
 
@@ -109,6 +110,43 @@ access to the Space can call it. Hugging Face still runs the machine, so its
 - **The selector shows exactly what you declare:** the model name, its context size and only the
   reasoning-effort levels your server accepts. The plugin checks those levels at the first start
   and reports any the server refuses.
+
+## What you set up, and what the plugin does
+
+The plugin drives a Space **you already have running your model**. It does not create the Space,
+choose its hardware, install an inference engine or upload weights: that infrastructure is yours
+to build and configure on Hugging Face, once.
+
+| You set up, on Hugging Face | The plugin does, in DeepSeek Harness |
+|---|---|
+| **The Space** (a Docker Space), private or public | Puts its models in the model selector |
+| **The machine:** a GPU hardware flavor, such as an A100 or an L40S, in the Space settings (or `hardware` in the configuration) | Starts the Space through the Hugging Face API, and pauses it |
+| **The inference engine** that runs the model and serves an OpenAI-compatible API (see below) | Waits until the engine lists your models, then sends the conversation |
+| **The weights:** where they live (a storage bucket mounted as a volume, the Space repository, or a download at boot) and how the engine loads them | Shows the start progress, from the Space state and from optional progress lines in its log |
+| **The chat template** and the reasoning-effort values it accepts | Offers in the selector only the effort levels you declare, and checks them at the first start |
+| **The Space sleep time,** the safety net when the Harness is closed | Applies its own idle and time-limit rules while the Harness is open |
+| **Space secrets** the engine itself needs | Writes the start variables you declare (never secrets) |
+
+### Inference engines
+
+Any engine that serves `GET /v1/models` and `POST /v1/chat/completions` at the Space's address
+should work:
+- **llama.cpp `llama-server`:** tested (a 27B GGUF model on an A100, 2026-10-31).
+- **Ollama, vLLM, Hugging Face TGI** and similar servers offer OpenAI-compatible endpoints. They
+  should work when they serve both endpoints above; they are not tested yet. Reports are welcome.
+
+What the engine side needs:
+- **listen on the port the Space exposes** (for a Docker Space, `app_port` in the Space README,
+  7860 by default) and serve the API under `/v1` at the Space root, or set `baseURL` in the
+  configuration;
+- **list your model ids** in `GET /v1/models` exactly as you write them in the configuration;
+- **accept `reasoning_effort`** with the values you map in `reasoning`, or declare
+  `reasoning: false` for a model without effort control.
+
+Optional, for a better experience: progress lines in the Space log (`SPACE_EVENT {...}`), a
+`dsh-hf-spaces.json` manifest so users only need the Space id, and start variables for a Space
+that needs a fresh value at each boot. All three are described in [docs/design.md](docs/design.md).
+A reference Space template may come later.
 
 ## Responsible use
 
@@ -314,6 +352,13 @@ Each release states the Harness versions it was tested on and how it was tested.
 How the plugin is kept compatible is a contributor rule: [AGENTS.md, section 7](AGENTS.md#7-compatibility-with-harness-updates).
 
 ## FAQ
+
+### Does the plugin create the Space or install the inference engine?
+
+No. You build the Space on Hugging Face: the GPU hardware, the inference engine (for example
+llama.cpp `llama-server`, Ollama or vLLM), the weights and the sleep time. The plugin then starts,
+watches, uses and pauses that Space from DeepSeek Harness. See
+[What you set up, and what the plugin does](#what-you-set-up-and-what-the-plugin-does).
 
 ### How do I use my own open-weight LLM in DeepSeek Harness?
 
