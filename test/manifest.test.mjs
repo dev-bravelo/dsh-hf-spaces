@@ -29,6 +29,12 @@ test('manifest: an invalid one is refused as a whole, with the reason', () => {
   assert.match(parseManifest(manifestText({ models: [] })).problem, /lists no model/);
   assert.match(parseManifest(manifestText({ models: [{ id: 'm', reasoning: { turbo: 'x' } }] })).problem, /unknown reasoning level/);
   assert.match(parseManifest(manifestText({ idleSeconds: -1 })).problem, /idleSeconds/);
+  assert.match(parseManifest(manifestText({ models: [{ id: 'm', input: ['video'] }] })).problem, /unknown input "video"/);
+});
+
+test('manifest: a model that reads images says so with input', () => {
+  const { manifest } = parseManifest(manifestText({ models: [{ id: 'open-model-q6', input: ['text', 'image'] }] }));
+  assert.deepEqual(manifest.models[0].input, ['text', 'image']);
 });
 
 test('ready to use: Space id only, everything else from the API and the manifest', () => {

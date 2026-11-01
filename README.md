@@ -141,7 +141,11 @@ What the engine side needs:
   configuration;
 - **list your model ids** in `GET /v1/models` exactly as you write them in the configuration;
 - **accept `reasoning_effort`** with the values you map in `reasoning`, or declare
-  `reasoning: false` for a model without effort control.
+  `reasoning: false` for a model without effort control;
+- **for a model that reads images,** load its vision part in the engine (for llama.cpp, the
+  `--mmproj` projector) and declare `input: [text, image]` for that model, in the configuration
+  or in the Space's `dsh-hf-spaces.json` manifest. Without it, the Harness treats the model as
+  text only and refuses images to it.
 
 Optional, for a better experience: progress lines in the Space log (`SPACE_EVENT {...}`), a
 `dsh-hf-spaces.json` manifest so users only need the Space id, and start variables for a Space
@@ -337,7 +341,8 @@ the start progress becomes more detailed (copy percentage, load, warm-up).
 
 | Plugin | DeepSeek Harness | Status |
 |---|---|---|
-| 0.1.0-alpha.8 (unreleased) | 0.2.1-rc.3 | The full plugin, with the interface redesigned after the first Desktop test (alpha.7): selector, start and resume, progress, /space, stop rules, header indicator, sidebar tab, notices, setup page, billing usage and start records. Offline and runtime tests on the installed Harness, Windows, 2026-10-31. First real start (alpha.7, 2026-10-31, private A100 Space): ready in 3 min 11 s with live progress, stopped by /space off after 18 min, US$ 0.75 estimated. The redesigned header was seen working on the Desktop the same day, in a session switched from another model |
+| 0.1.0-alpha.9 | 0.2.1-rc.3 | alpha.8 plus `input: [text, image]` per model, so a vision model served by the Space can read images in the Harness. Offline and runtime tests on the installed Harness, Windows, 2026-11-01 |
+| 0.1.0-alpha.8 | 0.2.1-rc.3 | The full plugin, with the interface redesigned after the first Desktop test (alpha.7): selector, start and resume, progress, /space, stop rules, header indicator, sidebar tab, notices, setup page, billing usage and start records. Offline and runtime tests on the installed Harness, Windows, 2026-10-31. First real start (alpha.7, 2026-10-31, private A100 Space): ready in 3 min 11 s with live progress, stopped by /space off after 18 min, US$ 0.75 estimated. The redesigned header was seen working on the Desktop the same day, in a session switched from another model |
 
 Each release states the Harness versions it was tested on and how it was tested.
 

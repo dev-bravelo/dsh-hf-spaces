@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DEFAULTS, HARNESS_LEVELS, checkBaseURL, isLoopbackURL, isSpaceURL, normalizeConfig, normalizeModel, normalizeReasoning, routeFromLabel } from '../src/config.mjs';
+import { DEFAULTS, HARNESS_LEVELS, checkBaseURL, isLoopbackURL, isSpaceURL, normalizeConfig, normalizeInput, normalizeModel, normalizeReasoning, routeFromLabel } from '../src/config.mjs';
 
 const space = (extra = {}) => ({ id: 'your-user/your-llm-space', ...extra });
 
@@ -90,6 +90,17 @@ test('model: name defaults to id, sizes must be positive whole numbers', () => {
   const { spaces, problems } = normalizeConfig({ spaces: [space({ models: [{ id: 'a' }, { id: 'a' }, { id: 'b', reasoning: { nope: 'x' } }] })] });
   assert.deepEqual(spaces[0].models.map(m => m.id), ['a']);
   assert.equal(problems.length, 2);
+});
+
+test('model input: unset means text only; text and image in a fixed order; anything else refused', () => {
+  assert.equal(normalizeModel({ id: 'm' }).model.input, undefined);
+  assert.deepEqual(normalizeModel({ id: 'm', input: ['image', 'text', 'image'] }).model.input, ['text', 'image']);
+  assert.deepEqual(normalizeInput(['text']), { value: ['text'] });
+  assert.match(normalizeModel({ id: 'm', input: ['image'] }).problem, /must include text/);
+  assert.match(normalizeModel({ id: 'm', input: ['text', 'audio'] }).problem, /unknown input "audio"/);
+  assert.match(normalizeModel({ id: 'm', input: 'image' }).problem, /must be a list/);
+  // The Harness config schema turns an absent list into []: that must stay "text only", not a refusal.
+  assert.equal(normalizeModel({ id: 'm', input: [] }).model.input, undefined);
 });
 
 test('start options: hardware name and ready timeout, with a 15 min default', () => {

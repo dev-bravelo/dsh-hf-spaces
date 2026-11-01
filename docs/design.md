@@ -216,7 +216,8 @@ without starting the GPU.
       "name": "Open model name",
       "contextWindow": 131072,
       "maxTokens": 32768,
-      "reasoning": { "off": "none", "low": "low", "medium": "medium", "xhigh": "xhigh" }
+      "reasoning": { "off": "none", "low": "low", "medium": "medium", "xhigh": "xhigh" },
+      "input": ["text", "image"]
     }
   ],
   "progress": { "eventPrefix": "SPACE_EVENT" },
@@ -243,6 +244,7 @@ section 2, "Model selector".
 | 3. Listed while stopped | Names and efforts come from the configuration or the Space manifest, so the model can be picked while the Space is paused. Picking it never starts the Space; only sending a message does | No network call and no cost to choose a model |
 | 4. Effort levels | `reasoning` maps each Harness level (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) to the value the server accepts, listed from least to greatest effort. `false` means no reasoning control, and the selector then shows no Effort row. The selector offers only these levels; it has no free input | The server rejects values its chat template does not know |
 | 5. Checked at load | An unknown level name, an empty value or an empty map refuses that model, with the reason in the log and in the plugin's interface. Nothing is dropped silently | Rule "fail visibly" (AGENTS.md, section 7) |
+| 5a. What the model reads | `input` lists `text` and, for a model that reads images, `image`. It becomes the model's `inputModalities` in the Harness. Unset means text only, and the Harness then refuses images to the model ("does not declare image input") even when the server could read them. The list must include `text`; another kind refuses the model | Seen 2026-11-01: a vision model served by llama.cpp with its projector loaded could not read an image in the Harness, because the route did not declare it |
 | 6. Checked against the Space | When the Space is ready, the model `id` must appear in `GET /v1/models`, and each configured level is tried once with a one-token request. A rejected level is shown in the interface, with the fix: remove it from `reasoning`. Results are kept per configuration and Space revision (`sha` from `GET /api/spaces/{id}`), so the check runs again only after a change | A llama.cpp Qwen template answered HTTP 500 to `minimal`, `high` and `max` (tested 2026-09-21), so a rejection is visible and testable |
 | 7. Live update | A change to names or levels in the configuration registers the route again, and the selector refreshes by itself on `llm/adapters-updated`, with no restart | The user sees the change at once |
 | 8. Tests | Offline: the route built from the example configuration has the exact names and the levels in order. Runtime, on the installed Harness: the session's model list shows the model name and only those levels | Proof that steps 1 to 7 hold |

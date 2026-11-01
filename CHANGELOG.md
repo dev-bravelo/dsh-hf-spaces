@@ -6,6 +6,18 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added (0.1.0-alpha.9, 2026-11-01)
+
+- **Image input per model:** `input: [text, image]` in a model entry, in the configuration or the
+  Space manifest, becomes the model's `inputModalities` in the Harness. Before, every Space model
+  was text only: a vision model served by llama.cpp, with its projector loaded and reading images
+  correctly, was refused images by the Harness ("does not declare image input"). Unset (or an
+  empty list, which the Harness config schema gives for an absent one) stays text only; the list
+  must include `text`, and any other kind refuses the model with the reason.
+- **Tests:** validation of `input` in the configuration and the manifest, the route passing it
+  on, and a runtime test on the installed Harness (0.2.1-rc.3) where `resolveModelInfo` returns
+  `inputModalities: ["text", "image"]`.
+
 ### Added (public repository, 2026-10-31)
 
 - **README:** what the user sets up on Hugging Face (hardware, inference engine, weights, sleep

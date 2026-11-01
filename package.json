@@ -1,6 +1,6 @@
 {
   "name": "dsh-hf-spaces",
-  "version": "0.1.0-alpha.8",
+  "version": "0.1.0-alpha.9",
   "private": true,
   "description": "DeepSeek Harness plugin: run open-weight LLMs on your own GPU virtual machine on Hugging Face (a Space), started when you send a message and paused when idle, with live progress and cost in the Harness interface.",
   "license": "MIT",

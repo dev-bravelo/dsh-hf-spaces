@@ -40,6 +40,15 @@ test('models keep the open name, sizes and the ordered effort levels; no levels 
   assert.deepEqual(second, { id: 'plain-model', name: 'Plain Model 7B', reasoningEfforts: false });
 });
 
+test('a model that declares image input reaches the Harness with it; others stay text only', () => {
+  const vision = effectiveSpace(settings.spaces[0], { host: 'https://x.hf.space' },
+    { models: [{ id: 'open-model-q6', name: 'Open Model 27B', input: ['text', 'image'] }, { id: 'plain-model', name: 'Plain Model 7B' }] }).space;
+  const [first, second] = buildProviders([vision], settings.credentials).providers['my-llm'].models;
+  assert.deepEqual(first.input, ['text', 'image']);
+  assert.equal('input' in second, false);
+  assert.match(describeSpace(vision), /Open Model 27B \[reads images\], Plain Model 7B\)/);
+});
+
 test('the route default effort is set only when every model can use it', () => {
   const mixed = buildProviders([space], settings.credentials).providers['my-llm'];
   assert.equal(mixed.reasoning, undefined);

@@ -15,7 +15,7 @@ import path from 'node:path';
 import Schema from '@deepseek-ai/schemastery';
 import * as piAiModule from '@deepseek-ai/dsh-llm-pi-ai';
 import { credentialRef } from '@deepseek-ai/dsh-credentials';
-import { HARNESS_LEVELS, normalizeConfig } from './config.mjs';
+import { HARNESS_LEVELS, INPUT_KINDS, normalizeConfig } from './config.mjs';
 import { HF_API, createHfClient } from './hf.mjs';
 import { LEDGER_FILE, attachAccount, createLedger, resolveStateDir } from './account.mjs';
 import { MANIFEST_FILE, effectiveSpace, parseManifest } from './manifest.mjs';
@@ -38,6 +38,8 @@ const Model = Schema.object({
   maxTokens: Schema.number().description('Output cap in tokens. Unset: the route fallback (32,768).'),
   reasoning: Schema.union([Schema.const(false), Schema.dict(Schema.string())])
     .description(`Effort levels the selector offers: Harness level (${HARNESS_LEVELS.join(', ')}) -> value the server accepts. false: no effort control.`),
+  input: Schema.array(Schema.string())
+    .description(`What the model reads: ${INPUT_KINDS.join(', ')}. Unset: text only, and the Harness refuses images to it.`),
 });
 
 export const Config = Schema.object({

@@ -29,6 +29,9 @@ spaces:
         # your server's chat template accepts. A Qwen3 llama.cpp template accepted none, low,
         # medium and xhigh, and answered HTTP 500 to minimal, high and max.
         reasoning: { off: none, low: low, medium: medium, xhigh: xhigh }
+        # What the model reads. Add image only when the engine reads images (for llama.cpp, a
+        # loaded --mmproj projector). Unset: text only, and the Harness refuses images to it.
+        input: [text, image]
     progress:
       eventPrefix: SPACE_EVENT         # prefix of the optional progress lines in the Space run log
     start:

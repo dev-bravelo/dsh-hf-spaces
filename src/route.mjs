@@ -32,6 +32,7 @@ export function buildProviders(spaces, credentials) {
         name: m.name,
         ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}),
         ...(m.maxTokens ? { maxTokens: m.maxTokens } : {}),
+        ...(m.input ? { input: [...m.input] } : {}),
         // `false` keeps the selector from offering an effort control the server would ignore.
         reasoningEfforts: m.reasoning ? { ...m.reasoning } : false,
       })),
@@ -46,7 +47,7 @@ export function describeSpace(space) {
   const parts = [
     `route ${space.route}`,
     `address from ${space.baseURL.source}`,
-    `${models.length} model${models.length === 1 ? '' : 's'} from ${space.models.source} (${models.map(m => m.name).join(', ')})`,
+    `${models.length} model${models.length === 1 ? '' : 's'} from ${space.models.source} (${models.map(m => (m.input?.includes('image') ? `${m.name} [reads images]` : m.name)).join(', ')})`,
     space.defaultEffort ? `default effort ${space.defaultEffort.value} (${space.defaultEffort.source})` : 'no default effort',
   ];
   return `${space.id}: ${parts.join('; ')}`;

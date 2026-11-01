@@ -80,6 +80,24 @@ export function normalizeReasoning(raw) {
   return { value: ordered };
 }
 
+/** Input kinds a route model can declare; the Harness treats a model without `input` as text only. */
+export const INPUT_KINDS = Object.freeze(['text', 'image']);
+
+/**
+ * Checks an `input` list (what the model reads besides text). The Harness refuses images to a
+ * model that does not declare `image`, even when the server could read them.
+ * @returns {{ value?: string[] } | { problem: string }}
+ */
+export function normalizeInput(raw) {
+  // An empty list is the same as none: the Harness config schema fills an absent array with [].
+  if (raw === undefined || (Array.isArray(raw) && raw.length === 0)) return {};
+  if (!Array.isArray(raw)) return { problem: `\`input\` must be a list of ${INPUT_KINDS.join(', ')}` };
+  const unknown = raw.filter(kind => !INPUT_KINDS.includes(kind));
+  if (unknown.length) return { problem: `unknown input ${unknown.map(kind => `"${kind}"`).join(', ')}; use ${INPUT_KINDS.join(', ')}` };
+  if (!raw.includes('text')) return { problem: '`input` must include text' };
+  return { value: INPUT_KINDS.filter(kind => raw.includes(kind)) };
+}
+
 /**
  * Checks one model entry. `name` defaults to `id`; sizes stay unset when not given (the route's
  * documented fallbacks apply).
@@ -98,6 +116,9 @@ export function normalizeModel(raw) {
   const reasoning = normalizeReasoning(raw.reasoning);
   if ('problem' in reasoning) return { problem: `model "${id}": ${reasoning.problem}` };
   if (reasoning.value !== undefined) model.reasoning = reasoning.value;
+  const input = normalizeInput(raw.input);
+  if ('problem' in input) return { problem: `model "${id}": ${input.problem}` };
+  if (input.value !== undefined) model.input = input.value;
   return { model };
 }
 

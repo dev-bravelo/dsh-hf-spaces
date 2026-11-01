@@ -156,6 +156,7 @@ Nothing in this section was run in Phase 0, so every item is **Read** unless mar
 |---|---|---|
 | Provider route | A `dsh-llm-pi-ai` route declares `displayName` (the label the selector shows), `api`, `baseURL`, `apiKeyEnv` and `models`. A hand-declared route id is a lowercase hyphenated identifier | `dsh-llm-pi-ai` README |
 | Model entry | `models[]` has `id`, `name`, `contextWindow`, `maxTokens` and `reasoningEfforts`. A `models` list replaces the route's catalog | Same |
+| Input kinds | `models[].input` (`text`, `image`) becomes the model's `inputModalities`. Without it the model is text only and `read_image` refuses images ("does not declare image input"). **Verified 2026-11-01 on 0.2.1-rc.3** by this plugin's runtime test: `resolveModelInfo` returned `inputModalities: ["text", "image"]` | `dsh-llm-pi-ai`; runtime test |
 | Effort levels | `reasoningEfforts` maps each level the selector offers to the value sent on the wire (`max: ultra` renames a level). `false` declares a model without reasoning. Exact-model metadata lists the levels from least to greatest | Same |
 | What the selector shows | Models grouped by provider, by catalog name. The selected model decides which effort names exist and the default. Only levels the adapter advertises are offered: no free input, and no Effort row without reasoning metadata | `dsh-client-ui-model-selection` README |
 | Refresh | Each session's model list loads again on `llm/adapters-updated`, `settings/document-updated` and credential events | Same |

@@ -78,7 +78,7 @@ if (!root) {
           id: 'your-user/configured',
           label: 'Configured LLM',
           baseURL: 'http://127.0.0.1:9/v1',
-          models: [{ id: 'open-model-q6', name: 'Open Model 27B', contextWindow: 131072, maxTokens: 32768, reasoning: { xhigh: 'xhigh', off: 'none', medium: 'medium', low: 'low' } }],
+          models: [{ id: 'open-model-q6', name: 'Open Model 27B', contextWindow: 131072, maxTokens: 32768, reasoning: { xhigh: 'xhigh', off: 'none', medium: 'medium', low: 'low' }, input: ['text', 'image'] }],
         }],
       });
       await fiber;
@@ -86,6 +86,9 @@ if (!root) {
       const models = await ctx.llm.listModels('configured-llm');
       assert.deepEqual(models.map(m => [m.id, m.name]), [['open-model-q6', 'Open Model 27B']]);
       const info = await ctx.llm.resolveModelInfo('configured-llm', 'open-model-q6');
+      // Without `inputModalities` the Harness refuses images to the model (read_image says it
+      // "does not declare image input"), even when the Space can read them.
+      assert.deepEqual(info.inputModalities, ['text', 'image']);
       assert.equal(info.name, 'Open Model 27B');
       assert.deepEqual(info.reasoning.efforts.map(e => e.id), ['off', 'low', 'medium', 'xhigh']);
       assert.equal(info.reasoning.defaultEffort, 'medium');
